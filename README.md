@@ -1,4 +1,6 @@
 <div align="center">
+  
+<img src="./ui/public/auto-tensor.png" width="160" height="160" alt="Auto-Tensor Logo" />
 
 # ⚡ Auto-Tensor
 
@@ -32,6 +34,15 @@ Scout  ──▶  Coder  ──▶  Reviewer  ──▶  Governor Gate  ──�
 ```
 
 Every action is governed by a **rate-limit governor** that enforces miner priority — if quota drops below 15%, all agent activity halts automatically.
+
+---
+
+## 📸 Screenshots
+
+### Neuro-SRE Command Console (v1.0)
+![Auto-Tensor Dashboard](./ui/public/auto-tensor_screenshot.png)
+
+_The 'Industrial Sovereign' dashboard provides real-time miner telemetry, GitHub Governor status, and surgical simulation audits._
 
 ---
 
