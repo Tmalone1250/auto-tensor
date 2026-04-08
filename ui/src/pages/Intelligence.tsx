@@ -69,6 +69,16 @@ const Intelligence: React.FC = () => {
     }
   };
 
+  const handleClearLogs = async () => {
+    try {
+      await axios.post(`${API_BASE}/logs/clear`);
+      setLogs([]);
+    } catch (err) {
+      console.error("Failed to clear logs:", err);
+      setLogs([]); // Fallback to local clear
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Mission Intake Bar */}
@@ -159,7 +169,15 @@ const Intelligence: React.FC = () => {
 
         {/* Node Telemetry */}
         <div className="space-y-4">
-          <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-6">Agent Telemetry</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em]">Agent Telemetry</h3>
+            <button 
+              onClick={handleClearLogs}
+              className="text-[9px] font-black uppercase text-brand-success/60 hover:text-brand-success border border-brand-success/20 hover:border-brand-success/40 px-2 py-0.5 rounded transition-all bg-black/20"
+            >
+              Clear
+            </button>
+          </div>
           <div className="bg-black/40 border border-brand-accent rounded-lg p-4 h-[600px] font-mono text-[10px] overflow-y-auto space-y-1 custom-scrollbar">
             {logs.map((log, i) => {
               const isError = log.includes("LLM Error") || log.includes("Exception");

@@ -49,28 +49,29 @@ class SurgicalScoutV3:
             time.sleep(sleep_time)
 
     def fetch_issues(self, repo: str) -> List[Dict[Any, Any]]:
-        all_issues = []
-        labels = self.scout_settings.get("labels", [])
+        """Fetches recent unassigned issues without restrictive label filters."""
+        url = f"https://api.github.com/repos/{repo}/issues"
+        params = {
+            "state": "open",
+            "sort": "created",
+            "direction": "desc",
+            "per_page": 50 # Broad fetch for variety
+        }
         
-        for label in labels:
-            url = f"https://api.github.com/repos/{repo}/issues"
-            params = {
-                "state": "open",
-                "per_page": 100,
-                "labels": label
-            }
-            
-            response = requests.get(url, headers=self.headers, params=params)
-            self.check_rate_limit(response)
-            
-            if response.status_code == 200:
-                all_issues.extend(response.json())
-            else:
-                print(f"Error fetching {label} for {repo}: {response.status_code}")
-                
-        # deduplicate by id
-        unique_issues = {i['id']: i for i in all_issues}.values()
-        return list(unique_issues)
+        response = requests.get(url, headers=self.headers, params=params)
+        self.check_rate_limit(response)
+        
+        if response.status_code == 200:
+            all_issues = response.json()
+            # Filter for unassigned and exclude Pull Requests
+            filtered = [
+                i for i in all_issues 
+                if not i.get("assignee") and "pull_request" not in i
+            ]
+            return filtered
+        else:
+            print(f"Error fetching issues for {repo}: {response.status_code}")
+            return []
 
     def calculate_delta_score(self, issue: Dict[Any, Any]) -> int:
         score = 5 # Base score
@@ -104,6 +105,7 @@ class SurgicalScoutV3:
         return "DX"
 
     def scan(self, target_repo: str = None):
+        print(f"[Bored Scout]: Target acquired -> {target_repo or 'Watchlist'}")
         all_results = []
         # If target_repo is a full URL, extract the full_name
         if target_repo and target_repo.startswith("http"):
@@ -125,27 +127,32 @@ class SurgicalScoutV3:
                 category = self.categorize(issue)
                 
                 all_results.append({
+                    "id": issue["id"],
                     "title": issue["title"],
-                    "url": issue["html_url"],
                     "body": issue.get("body", ""),
-                    "category": category,
+                    "url": issue["html_url"],
+                    "repo": repo,
                     "delta_score": delta_score,
-                    "repo": repo
+                    "category": category
                 })
         
         # Rank by Delta Score
         all_results.sort(key=lambda x: x["delta_score"], reverse=True)
         
-        # Take Top 5
-        top_5 = all_results[:5]
+        # Take Top 3 (Quality over Quantity)
+        top_3 = all_results[:3]
         
         # Eager Strategy Generation
         from core.llm import LlmClient
         llm = LlmClient()
         
-        print(f"Node Sync: Generating fix blueprints for {len(top_5)} targets...")
-        for target in top_5:
+        print(f"Node Sync: Generating fix blueprints for {len(top_3)} candidates...")
+        # Focus on top 3 highest-priority surgical candidates
+        persona_note = "Identify the absolute top 3 highest-priority, surgical-fix candidates. Quality over quantity. Focus on candidates fixable with a few files."
+        
+        for target in top_3:
             strategy_prompt = (
+                f"{persona_note}\n\n"
                 f"Propose a concise, surgical fix strategy for this GitHub issue.\n"
                 f"Repo: {target['repo']}\n"
                 f"Title: {target['title']}\n"
@@ -153,26 +160,31 @@ class SurgicalScoutV3:
                 "What files should I check? What terminal commands should I run? "
                 "Be direct, technically precise, and bored."
             )
-            target["strategy"] = llm.generate(strategy_prompt)
+            try:
+                target["strategy"] = llm.generate(strategy_prompt)
+            except Exception as e:
+                print(f"[Bored Scout]: LLM Strategy failure for {target['title']}: {e}")
+                target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
+            
             # Remove body from output to keep json lean
             del target["body"]
 
         report = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "total_scanned": len(all_results),
-            "top_targets": top_5
+            "top_targets": top_3
         }
         
         report_path = self.scout_settings.get("report_path", "logs/scout_report.json")
         with open(report_path, "w") as f:
             json.dump(report, f, indent=2)
             
-        summary_prompt = f"Summarize these scan results for {len(all_results)} issues. Mention the top target: {top_5[0]['title'] if top_5 else 'None'}. Be casual and bored."
+        summary_prompt = f"Summarize these scan results for {len(all_results)} issues. Mention the top target: {top_3[0]['title'] if top_3 else 'None'}. Be casual and bored."
         casual_summary = llm.generate(summary_prompt)
         
         print(f"\n[Bored Scout]: {casual_summary}")
-        print(f"Scan complete. {len(top_5)} blueprints ready at {report_path}")
-        return top_5
+        print(f"Scan complete. {len(top_3)} blueprints ready at {report_path}")
+        return top_3
 
 if __name__ == "__main__":
     import argparse

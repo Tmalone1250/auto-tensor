@@ -1,4 +1,5 @@
 import os
+import shutil
 import time
 import sys
 import subprocess
@@ -344,6 +345,28 @@ def get_coder_diff():
             return {"diff": f.read()}
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/logs/clear")
+def clear_logs():
+    """Archives the current workflow log and starts a new one."""
+    log_path = os.path.join("logs", "workflow.log")
+    archive_dir = os.path.join("logs", "archive")
+    
+    try:
+        if not os.path.exists(archive_dir):
+            os.makedirs(archive_dir)
+            
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if os.path.exists(log_path):
+            archive_path = os.path.join(archive_dir, f"workflow_{timestamp}.log")
+            shutil.move(log_path, archive_path)
+            
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] LOGS CLEARED BY OPERATOR ---\n")
+            
+        return {"status": "success", "archived_as": f"workflow_{timestamp}.log"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
