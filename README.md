@@ -146,7 +146,7 @@ Paste a repository URL into the **Intelligence** node, wait for the **Node Sync*
 
 ## 📄 License
 
-MIT © [Trevor Malon](https://github.com/Tmalone1250)
+MIT © [Trevor Malone](https://github.com/Tmalone1250)
 
 <div align="center">
 
