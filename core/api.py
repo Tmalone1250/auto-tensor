@@ -208,6 +208,16 @@ def add_repo(request: RepoRequest):
     
     return {"status": "added", "repo": new_repo}
 
+@app.post("/repo/scan")
+def scan_repository(request: RepoRequest):
+    """Triggers the Scout agent on a specific repository URL."""
+    url = request.url.strip()
+    if not url.startswith("https://github.com/"):
+        raise HTTPException(status_code=400, detail="Invalid GitHub URL")
+        
+    # We pass the URL as the target to the scout
+    return pm.run_agent("scout", target=url)
+
 # --- Approvals Workflow ---
 @app.get("/approvals")
 def get_approvals():
@@ -248,13 +258,29 @@ def get_logs(agent: Optional[str] = None):
         with open(log_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         
-        # Filter by agent if requested
+        # Filter by agent with multi-line support
         if agent:
             tag = f"[{agent.capitalize()}]"
-            # Also catch the bored tags
             bored_tag = f"[Bored {agent.capitalize()}]"
-            filtered = [l for l in lines if tag in l or bored_tag in l or f"STARTING {agent.upper()}" in l]
-            return {"logs": [line.strip() for line in filtered[-50:]]}
+            filtered = []
+            capture_next = False
+            
+            for line in lines:
+                is_tagged = tag in line or bored_tag in line or f"STARTING {agent.upper()}" in line
+                
+                if is_tagged:
+                    filtered.append(line.strip())
+                    # If the line looks like it starts a JSON block or an error, prepare to capture next
+                    capture_next = line.strip().endswith("{") or "LLM Error" in line
+                elif capture_next and not line.startswith("[") and not line.startswith("---"):
+                    # This is a continuation line
+                    filtered.append(f"  {line.strip()}")
+                    if "}" in line or "]" in line:
+                         capture_next = False # Close block
+                else:
+                    capture_next = False
+            
+            return {"logs": filtered[-50:]}
             
         return {"logs": [line.strip() for line in lines[-50:]]}
     except Exception as e:
@@ -272,17 +298,39 @@ def retry_agent():
 
 @app.post("/scout/promote")
 def promote_issue(issue: Dict = Body(...)):
-    """Promotes a scouted issue to the Coder agent."""
+    """Promotes a scouted issue with a fix strategy to the Coder agent."""
     repo = issue.get("repo")
     title = issue.get("title")
+    strategy = issue.get("strategy", "No strategy provided.")
+    
     if not repo:
         raise HTTPException(status_code=400, detail="Missing repo in issue data")
     
-    # Store promotion in a state file for the Coder to pick up if needed
+    # Store promotion in a directive file for the Coder to pick up
+    directive = {
+        "repo": repo,
+        "title": title,
+        "strategy": strategy,
+        "timestamp": datetime.now().isoformat()
+    }
+    save_json(os.path.join("logs", "mission_parameters.json"), directive)
     save_json(os.path.join("logs", "current_mission.json"), issue)
     
-    # Trigger Coder
+    # Trigger Coder immediately
     return pm.run_agent("coder", target=repo)
+
+@app.get("/scout/report")
+def get_scout_report():
+    """Returns the latest scout report (intelligence results)."""
+    report_path = os.path.join("logs", "scout_report.json")
+    if not os.path.exists(report_path):
+        return {"error": "No scout report found."}
+    
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/coder/diff")
 def get_coder_diff():

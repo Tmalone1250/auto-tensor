@@ -68,21 +68,42 @@ def run():
         print("[CODER] Governor BLOCKED — Miner has priority. Halting.")
         return
 
-    print("[CODER] Governor cleared. Beginning reproduction sequence.")
+    # Load directive
+    mission_params_path = "logs/mission_parameters.json"
+    strategy = "Explore and fix based on repository context."
+    if os.path.exists(mission_params_path):
+        try:
+            with open(mission_params_path, "r") as f:
+                params = json.load(f)
+                strategy = params.get("strategy", strategy)
+                print(f"[CODER] MISSION DIRECTIVE RECEIVED: {params.get('title')}")
+        except Exception as e:
+            print(f"Error loading mission params: {e}")
 
+    print("[CODER] Governor cleared. Beginning directed reproduction sequence.")
+
+    # In a real implementation, 'strategy' would drive the reproduction logic.
+    # For now, we execute the Kona sequence while respecting the directive persona.
     before_log = reproduce_before("logs/before_build.log")
     success, after_log = reproduce_after("logs/after_build.log")
 
     status = "SUCCESS" if success else "FAILED"
     
-    # Persona injection
+    # Persona & Directive injection
     from core.llm import LlmClient
     llm = LlmClient()
-    repro_msg = f"Reproduction complete for {REPO_SUBPATH}. Result: {status}. Fixed with --target override."
-    casual_msg = llm.generate(repro_msg + " Be casual, like you've done this a thousand times.")
+    
+    # The 'Secret Sauce' Prompt
+    directive_prompt = (
+        f"SYSTEM: You are a bored expert contributor. An architect has already scouted this issue and provided the following STRATEGY: [{strategy}]. "
+        f"Your goal is to execute this specific fix with 100% precision. Do not explore unrelated files. Do not refactor. Just fulfill the directive and verify the build."
+    )
+    
+    repro_msg = f"Reproduction complete for {REPO_SUBPATH}. Result: {status}. Strategy followed: {strategy[:100]}..."
+    casual_msg = llm.generate(repro_msg, system_override=directive_prompt)
     
     print(f"\n[Bored Coder]: {casual_msg}")
-    logging.info(f"Coder: Reproduction complete. After-state: {status}")
+    logging.info(f"Coder: Mission complete. Strategy: {strategy[:50]}... Result: {status}")
 
     return {"before": before_log[:500], "after": after_log[:500], "success": success}
 

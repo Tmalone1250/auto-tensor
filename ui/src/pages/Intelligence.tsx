@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { BrainCircuit, Search, Trash2, ArrowUpRight, Loader2, AlertCircle } from 'lucide-react';
+import { BrainCircuit, Search, Trash2, ArrowUpRight, Loader2, AlertCircle, ClipboardCheck } from 'lucide-react';
 import AuditTerminal from '../components/AuditTerminal';
 
 const API_BASE = 'http://localhost:8000';
@@ -11,31 +11,31 @@ interface Target {
   category: string;
   delta_score: number;
   repo: string;
+  strategy?: string;
 }
 
 const Intelligence: React.FC = () => {
   const [targets, setTargets] = useState<Target[]>([]);
+  const [scanUrl, setScanUrl] = useState('');
   const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
   const fetchIntelligence = async () => {
     try {
       const [reportRes, logsRes] = await Promise.all([
-        axios.get(`${API_BASE}/audit`), // Assuming we might want a specific scout-report endpoint soon, but audit has it for now
+        axios.get(`${API_BASE}/scout/report`),
         axios.get(`${API_BASE}/logs?agent=scout`)
       ]);
-      
-      // In a real scenario, we'd have a /scout/report endpoint. 
-      // For now, let's mock it if the file doesn't exist or fetch from the known location.
-      const scoutReportPath = 'logs/scout_report.json';
-      const reportData = await axios.get(`${API_BASE}/audit`); // This is actually logs/simulation_audit.md. 
-      // I'll assume the backend provides the scout_report.json data via a new endpoint soon.
-      // For the sake of scaffolding, I'll fetch /logs?agent=scout and use state.
-      
+
+      if (reportRes.data && reportRes.data.top_targets) {
+        setTargets(reportRes.data.top_targets);
+      }
+
       setLogs(logsRes.data.logs);
       setLoading(false);
     } catch (err) {
-      console.error(err);
+      console.error("Fetch intelligence failed:", err);
     }
   };
 
@@ -45,10 +45,25 @@ const Intelligence: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const startScan = async () => {
+    if (!scanUrl) return;
+    setScanning(true);
+    setTargets([]); // Clear and Replace logic
+    try {
+      await axios.post(`${API_BASE}/repo/scan`, { url: scanUrl });
+      // Polling or waiting for scout_report.json to update would go here.
+      // For this implementation, we'll wait for the logs to signal completion.
+    } catch (err) {
+      alert("Scan failed to initiate.");
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const promote = async (target: Target) => {
     try {
       await axios.post(`${API_BASE}/scout/promote`, target);
-      alert("Target promoted to Engineering.");
+      alert("Target promoted to Engineering with Senior Dev Directive.");
     } catch (err) {
       alert("Promotion failed.");
     }
@@ -56,13 +71,38 @@ const Intelligence: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Mission Intake Bar */}
+      <div className="bg-brand-bg/80 border border-brand-accent p-6 rounded-lg shadow-2xl backdrop-blur-md">
+        <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-4">Mission Intake</h3>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+            <input
+              type="text"
+              value={scanUrl}
+              onChange={(e) => setScanUrl(e.target.value)}
+              placeholder="Enter GitHub Link Here"
+              className="w-full bg-black/40 border border-brand-accent p-3 pl-10 rounded text-sm font-mono text-brand-success placeholder:text-slate-600 focus:border-brand-success/50 outline-none transition-all"
+            />
+          </div>
+          <button
+            onClick={startScan}
+            disabled={scanning}
+            className="px-8 py-3 bg-brand-success/10 hover:bg-brand-success/20 border border-brand-success/50 text-brand-success text-xs font-black uppercase tracking-widest transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+          >
+            {scanning ? <Loader2 className="animate-spin" size={16} /> : <BrainCircuit size={16} />}
+            Scan Repository
+          </button>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between border-b border-brand-accent/30 pb-4">
         <div className="flex items-center gap-3">
           <BrainCircuit className="text-brand-success" size={24} />
-          <h2 className="text-xl font-bold tracking-tighter uppercase">Intelligence Node</h2>
+          <h2 className="text-xl font-bold tracking-tighter uppercase">Intelligence Agent</h2>
         </div>
         <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-           Status: Active Scouting
+          Status: {scanning ? 'Scanning Repository...' : 'Active Scouting'}
         </div>
       </div>
 
@@ -70,51 +110,67 @@ const Intelligence: React.FC = () => {
         {/* Target Queue */}
         <div className="space-y-4">
           <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-6">Target Queue</h3>
-          {loading ? <Loader2 className="animate-spin text-brand-success" /> : (
-            <div className="space-y-3">
-              {/* Mocking a card for now since I can't easily fetch local json files directly via axios without a dedicated endpoint */}
-              <div className="bg-brand-bg/50 border border-brand-accent p-5 rounded-lg group hover:border-brand-success/50 transition-all">
-                <div className="flex items-start justify-between mb-4">
-                  <span className="text-[10px] bg-brand-success/10 text-brand-success px-2 py-0.5 rounded border border-brand-success/20 font-bold uppercase">
-                    P1 ISSUE
-                  </span>
-                  <div className="flex gap-2">
+          {loading ? <Loader2 className="animate-spin text-brand-success" /> : targets.length === 0 && !scanning ? (
+            <div className="text-center py-12 border border-dashed border-brand-accent/30 rounded-lg">
+              <p className="text-[10px] text-slate-600 uppercase font-black tracking-widest leading-loose">
+                No active intelligence. <br /> Use Mission Intake to scan a repository.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {targets.map((target, idx) => (
+                <div key={idx} className="bg-brand-bg/50 border border-brand-accent p-5 rounded-lg group hover:border-brand-success/50 transition-all shadow-lg relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-brand-success/20" />
+                  <div className="flex items-start justify-between mb-4">
+                    <span className="text-[10px] bg-brand-success/10 text-brand-success px-2 py-0.5 rounded border border-brand-success/20 font-bold uppercase">
+                      DELTA SCORE: {target.delta_score}
+                    </span>
                     <button className="p-1.5 text-slate-600 hover:text-brand-danger transition-colors">
                       <Trash2 size={14} />
                     </button>
                   </div>
+                  <h4 className="text-sm font-bold text-slate-200 mb-2 leading-tight">
+                    {target.title}
+                  </h4>
+                  <p className="text-[10px] text-slate-500 font-mono mb-4">RE: {target.repo}</p>
+
+                  {/* Strategy Directive Card */}
+                  <div className="mb-6 p-4 bg-black/60 border border-brand-accent/30 rounded text-[11px] font-mono leading-relaxed relative">
+                    <div className="absolute top-2 right-2 opacity-10">
+                      <ClipboardCheck size={20} />
+                    </div>
+                    <span className="text-brand-success/50 font-black text-[9px] uppercase tracking-widest block mb-2">Architect Strategy</span>
+                    <p className="text-slate-400 italic">
+                      {target.strategy || "No strategy generated."}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => promote(target)}
+                    className="w-full py-3 bg-brand-success/10 hover:bg-brand-success/20 border border-brand-success/50 text-brand-success text-[10px] font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 group-hover:bg-brand-success/20 transition-all shadow-inner"
+                  >
+                    Promote to Engineering <ArrowUpRight size={14} />
+                  </button>
                 </div>
-                <h4 className="text-sm font-bold text-slate-200 mb-2 leading-tight">
-                  bug(kona): kona-host-client-offline-cannon test crashes due to wrong target spec
-                </h4>
-                <p className="text-[10px] text-slate-500 font-mono mb-6">RE: ethereum-optimism/optimism</p>
-                <button 
-                  onClick={() => promote({
-                    title: "bug(kona): ...",
-                    repo: "ethereum-optimism/optimism",
-                    url: "",
-                    category: "DX",
-                    delta_score: 6
-                  })}
-                  className="w-full py-3 bg-brand-success/10 hover:bg-brand-success/20 border border-brand-success/50 text-brand-success text-[10px] font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 group-hover:bg-brand-success/20 transition-all"
-                >
-                  Promote to Coder <ArrowUpRight size={14} />
-                </button>
-              </div>
+              ))}
             </div>
           )}
         </div>
 
         {/* Node Telemetry */}
         <div className="space-y-4">
-          <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-6">Node Telemetry</h3>
-          <div className="bg-black/40 border border-brand-accent rounded-lg p-4 h-[400px] font-mono text-[10px] overflow-y-auto overflow-x-hidden space-y-1 custom-scrollbar">
-            {logs.map((log, i) => (
-              <div key={i} className="text-slate-400 border-l border-brand-accent/30 pl-2">
-                <span className="text-brand-success/40 mr-2">{'>'}</span>
-                {log}
-              </div>
-            ))}
+          <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-6">Agent Telemetry</h3>
+          <div className="bg-black/40 border border-brand-accent rounded-lg p-4 h-[600px] font-mono text-[10px] overflow-y-auto space-y-1 custom-scrollbar">
+            {logs.map((log, i) => {
+              const isError = log.includes("LLM Error") || log.includes("Exception");
+              const isContinuation = log.startsWith("  ");
+              return (
+                <div key={i} className={`text-slate-400 border-l ${isError ? 'border-brand-danger/50 bg-brand-danger/5 text-brand-danger/90' : 'border-brand-accent/30'} ${isContinuation ? 'ml-4 border-l-0 opacity-80' : 'pl-2'} py-0.5`}>
+                  {!isContinuation && <span className={`${isError ? 'text-brand-danger' : 'text-brand-success/40'} mr-2`}>{'>'}</span>}
+                  {log}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

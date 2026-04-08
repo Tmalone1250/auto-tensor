@@ -2,17 +2,19 @@
   
 <img src="./ui/public/auto-tensor.png" width="160" height="160" alt="Auto-Tensor Logo" />
 
-# ⚡ Auto-Tensor
+# ⚡ Auto-Tensor v2.1
 
-**Autonomous Bittensor Mining Agent · Open-Source SRE Operator**
+### The Network Operations Center
+
+**Autonomous SRE Dispatcher · Sovereign Workflow Orchestrator · Bittensor Miner**
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![WSL](https://img.shields.io/badge/Runs%20In-WSL%202-0078D6?style=for-the-badge&logo=linux&logoColor=white)](https://learn.microsoft.com/en-us/windows/wsl/)
-[![GitHub API](https://img.shields.io/badge/GitHub-API%20v3-181717?style=for-the-badge&logo=github&logoColor=white)](https://docs.github.com/en/rest)
+[![Gemini 3](https://img.shields.io/badge/LLM-Gemini_3_Flash-4285F4?style=for-the-badge&logo=google-gemini&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active-22c55e?style=for-the-badge)]()
+[![Status](https://img.shields.io/badge/NOC-Online-22c55e?style=for-the-badge)]()
 
-_A surgical, multi-agent system that scouts high-value GitHub issues across blockchain infrastructure repos, reproduces them, authors fixes, and stages production-grade PRs — autonomously._
+_A surgical, multi-agent system that scouts high-value GitHub issues, proposes "Architect Strategies," and executes precision fixes via the Sovereign Hand-off — governed by the Triptych NOC._
 
 </div>
 
@@ -20,106 +22,95 @@ _A surgical, multi-agent system that scouts high-value GitHub issues across bloc
 
 ## 🧠 What Is Auto-Tensor?
 
-**Auto-Tensor** is a Bittensor mining agent operating as a **Lead Systems Reliability Engineer** across top-tier Web3 infrastructure repositories — including **MetaMask**, **Optimism**, and **Bitcore**.
+**Auto-Tensor** is an autonomous SRE operator designed for high-velocity maintenance of Web3 infrastructure. It has evolved into a **Directed Execution** engine, replacing generic AI exploration with a strict **Architect -> Contractor** model.
 
-It follows a strict, four-phase workflow loop:
+### The Triptych NOC Architecture
 
+The system is managed via a three-node Network Operations Center:
+
+1.  **Intelligence Node (Scout)**: Targeted repository scanning and "Fix Blueprint" generation.
+2.  **Engineering Node (Coder)**: Precision reproduction and patch execution driven by Senior Dev Directives.
+3.  **Quality Node (Reviewer)**: The Sovereign Gate — Audit, Draft, and Publish stages for production-grade hand-overs.
+
+---
+
+## 🏗️ The Sovereign Hand-off Workflow
+
+```mermaid
+graph LR
+    subgraph Intelligence
+    A[Mission Intake] --> B[Surgical Scout]
+    B --> C[Fix Strategy]
+    end
+
+    C -- "Senior Dev Directive" --> Engineering
+
+    subgraph Engineering
+    D[Reproduction] --> E[Surgical Patch]
+    E --> F[Verification]
+    end
+
+    F --> Quality
+
+    subgraph Quality
+    G[Sovereign Audit] --> H[PR Draft]
+    H --> I[Publish]
+    end
 ```
-Scout  ──▶  Coder  ──▶  Reviewer  ──▶  Governor Gate  ──▶  PR
-  │            │              │                │
-  │            │              │                └── Rate-limit protection
-  │            │              └── Audit: side-effects, density, verify
-  │            └── Reproduce before/after; apply surgical patch
-  └── Hunt: bug / performance / a11y / TypeScript labels
-```
-
-Every action is governed by a **rate-limit governor** that enforces miner priority — if quota drops below 15%, all agent activity halts automatically.
 
 ---
 
 ## 📸 Screenshots
 
-### Neuro-SRE Command Console (v1.0)
+### Triptych NOC Console (v2.1)
+
 ![Auto-Tensor Dashboard](./ui/public/auto-tensor_screenshot.png)
 
-_The 'Industrial Sovereign' dashboard provides real-time miner telemetry, GitHub Governor status, and surgical simulation audits._
+_The Industrial Sovereign aesthetic: Real-time telemetry, mission intake dispatcher, and the Sovereign Gate workflow._
 
 ---
 
-## 🏗️ Architecture
+## 🚀 Technical Stack
 
-```
-auto-tensor/
-├── agents/
-│   ├── scout.py          # SurgicalScoutV3 — GitHub issue hunter & scorer
-│   ├── coder.py          # Reproduction engine — before/after build states
-│   └── reviewer.py       # Auditor — side-effects, density, verification
-├── core/
-│   ├── executor.py       # WSL Mandate Enforcer — all shell via wsl bash
-│   └── health_check.py   # The Governor — rate-limit gate & miner priority
-├── logs/
-│   ├── scout_report.json # Latest scan results
-│   └── simulation_audit.md
-├── workspace/            # Cloned target repos live here (gitignored)
-├── config.yaml           # Watchlist, labels, scout settings
-├── build_cannon.sh       # Re-verify Optimism #19895 cannon-builder fix
-├── check_deps.py         # Full environment audit (venv + WSL tools)
-├── requirements.txt
-└── .env                  # GITHUB_PAT, GEMINI_API_KEY
-```
+- **Core**: Python 3.12 (WSL 2 Mandate)
+- **Intelligence**: Gemini 3 Flash (v1beta) — High-fidelity strategy generation.
+- **Orchestration**: FastAPI Bridge with isolated agent telemetry logs.
+- **Frontend**: React + Vite + Tailwind — Multi-node agent management.
+- **Integrations**: GitHub API v3, Docker Desktop (Reproduction Environment).
 
 ---
 
-## 🎯 Targeting Criteria
+## 🔧 Operational Modes
 
-The Scout evaluates every open issue across the watchlist repos and assigns a **Delta Score (1–10)**:
+### 1. Intelligence — Mission Intake
 
-| Signal                                   | Score Impact |
-| ---------------------------------------- | ------------ |
-| Base score                               | `+5`         |
-| TypeScript `any` / missing interface     | `+3`         |
-| `performance` label                      | `+2`         |
-| `bug` label                              | `+1`         |
-| High comment count (> 10) — competed out | `−1`         |
-| Cap                                      | `max 10`     |
+The **Mission Intake Bar** allows operators to paste a repository URL. The Scout eagerly scans for the top 5 issues and generates a **Fix Strategy** (Architect Blueprint) for each.
 
-**Filtered watchlist:**
+- **Targeting**: Delta Scoring based on TypeScript complexity (`any` usage) and SRE impact.
 
-| Repo                          | Domain                           |
-| ----------------------------- | -------------------------------- |
-| `ethereum-optimism/optimism`  | L2 infrastructure, Rust/Go       |
-| `MetaMask/metamask-extension` | Browser wallet, TypeScript       |
-| `bitpay/bitcore`              | Bitcoin full-node library, JS/TS |
+### 2. Engineering — Directed Execution
+
+Upon promotion, the **Senior Dev Directive** logic kicks in. The Architect's strategy is injected into the Coder's system prompt, enforcing 100% precision and eliminating unrelated refactoring.
+
+### 3. Quality — The Sovereign Gate
+
+PRs are tiered through three stages:
+
+- **Audit**: Automated SRE verification scan.
+- **Draft**: Persona-driven PR description generation (using the "Bored Contributor" style).
+- **Publish**: Final dispatch to the upstream repository.
 
 ---
 
 ## 🛡️ The Governor
 
-`core/health_check.py` is the system's circuit breaker. It runs before every agent action.
+`core/health_check.py` maintains continuous monitoring of the GitHub API quota.
 
-```
-GitHub Core API Quota
-        │
-        ▼
-  remaining ≥ 750?  ──YES──▶  HEARTBEAT_OK  ──▶  Agents cleared
-        │
-       NO
-        ▼
-  HEARTBEAT_LOW ──▶  Sleep until reset + 60s buffer ──▶  Re-check
-```
-
-> **Miner Priority Rule:** Any network failure during the health check defaults to a **full halt** of all Scout/Coder activity. The miner is never starved of quota.
+- **Heartbeat Protection**: If quota drops below 15% (750 remaining), the NOC enters **Safe Mode**, halting all Scout/Coder background processes to protect the Miner's priority.
 
 ---
 
 ## 🚀 Quick Start
-
-### Prerequisites
-
-- Windows with **WSL 2** (Ubuntu recommended)
-- Python 3.12+ inside WSL
-- Docker Desktop (for cannon builds)
-- A GitHub Personal Access Token with `repo` + `read:org` scopes
 
 ### 1. Clone & Enter WSL
 
@@ -128,164 +119,28 @@ git clone git@github.com:Tmalone1250/auto-tensor.git
 cd auto-tensor
 ```
 
-### 2. Bootstrap the Virtual Environment
-
-> All Python execution **must** go through `.venv/bin/python` per system mandate.
+### 2. Launch the Bridge
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+./start_command_center.sh
 ```
 
-### 3. Configure Environment
+_This initializes the FastAPI backend and the Vite dashboard simultaneously._
 
-```bash
-cp .env.example .env
-# Edit .env:
-#   GITHUB_PAT=ghp_...
-#   GEMINI_API_KEY=...
-```
+### 3. Dispatch a Mission
 
-### 4. Verify Environment
-
-```bash
-.venv/bin/python check_deps.py
-```
-
-Expected output:
-
-```
-==================================================
-  Auto-Tensor Environment Audit v2
-==================================================
-
-[-- Python Environment --]
-[OK]  Virtual Environment: ACTIVE
-[OK]  python-dotenv: .env loaded
-
-[-- Python Packages --]
-[OK]  requests: 2.33.1
-[OK]  PyYAML: 6.0.3
-
-[-- System Tools (WSL) --]
-[OK]  Go: go version go1.21.x ...
-[OK]  Docker: Docker version 24.x ...
-==================================================
-```
-
----
-
-## 🔄 Running the Workflow
-
-### Phase 1 — Scout
-
-Scan all watchlist repos and generate `logs/scout_report.json`:
-
-```bash
-.venv/bin/python agents/scout.py
-```
-
-### Phase 2 — Coder
-
-Reproduce the bug and verify the fix:
-
-```bash
-.venv/bin/python agents/coder.py
-```
-
-Outputs:
-
-- `logs/before_build.log` — unpatched failure
-- `logs/after_build.log` — patched success
-
-### Phase 3 — Reviewer
-
-Full audit: side-effect check, surgical density, re-verification build:
-
-```bash
-.venv/bin/python agents/reviewer.py
-```
-
-### Manual Re-Verify (Cannon Build)
-
-```bash
-# From WSL
-bash build_cannon.sh
-```
+Paste a repository URL into the **Intelligence** node, wait for the **Node Sync** to generate strategies, and click **Promote** to trigger the Engineering agent.
 
 ---
 
 ## 📋 Operational Constraints
 
-| Rule                    | Detail                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------- |
-| **WSL Mandate**         | Every shell command routes through `wsl bash`. No PowerShell, no CMD.           |
-| **venv Isolation**      | All Python runs via `.venv/bin/python`. Never the system Python.                |
-| **`any` Ban**           | TypeScript repos: primary mission is replacing `any` with precise interfaces.   |
-| **Surgical Density**    | PRs must change ≤ 20 lines. No fluff.                                           |
-| **Zero Formatting PRs** | Prettier/lint-only changes are prohibited.                                      |
-| **No Float Math**       | Any value representing currency or measurement uses integer/Decimal arithmetic. |
-
----
-
-## 📊 Current Mission Log
-
-### Active Target: `ethereum-optimism/optimism#19895`
-
-> **`bug(kona): kona-host-client-offline-cannon test crashes due to wrong target spec in cannon-builder:v1.0.0`**
-
-| Phase              | Status                                                          |
-| ------------------ | --------------------------------------------------------------- |
-| Scout              | ✅ Identified — Delta Score 6/10                                |
-| Reproduce (Before) | ✅ Non-zero exit confirmed                                      |
-| Patch              | ✅ `--target kona/docker/cannon/mips64-unknown-none.json` added |
-| Reproduce (After)  | ✅ Exit 0, `kona-client` binary emitted                         |
-| Reviewer Audit     | ✅ 6-line delta · 0 side-effects · verification passed          |
-| PR                 | 🔜 Staged                                                       |
-
-**Fix summary:** The `cannon-builder:v1.0.0` Docker image is a cross-compile-only toolchain. Without an explicit `--target` pointing to the custom MIPS64 bare-metal JSON spec, `cargo` resolves to the host triple and fails. The fix adds `--target kona/docker/cannon/mips64-unknown-none.json` to the `justfile` recipe and `cannon-repro.dockerfile`.
-
----
-
-## 🔐 SSH & Git Setup (WSL)
-
-```bash
-# Configure identity
-git config --global user.name "Trevor Malon"
-git config --global user.email "malonetrevor12@gmail.com"
-
-# Generate Ed25519 key
-ssh-keygen -t ed25519 -C "malonetrevor12@gmail.com" -f ~/.ssh/id_ed25519 -N ""
-
-# Add GitHub to known_hosts
-ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
-
-# Verify
-ssh -T git@github.com
-# Expected: Hi Tmalone1250! You've successfully authenticated...
-```
-
----
-
-## 📦 Dependencies
-
-| Package         | Version   | Purpose                      |
-| --------------- | --------- | ---------------------------- |
-| `requests`      | 2.33.1    | GitHub API calls             |
-| `PyYAML`        | 6.0.3     | `config.yaml` parsing        |
-| `python-dotenv` | 1.2.2     | `.env` loading               |
-| `urllib3`       | 2.6.3     | HTTP transport               |
-| `certifi`       | 2026.2.25 | TLS certificate verification |
-
----
-
-## 🤝 Contributing
-
-This is a miner-grade, production system. PRs must pass all three reviewer audits:
-
-1. **Side-Effect Clean** — only expected files changed
-2. **Surgical Density** — ≤ 20 lines changed
-3. **Verification Build** — after-state exits 0
+| Rule                    | Detail                                                                  |
+| ----------------------- | ----------------------------------------------------------------------- |
+| **Architect Directive** | The Coder MUST follow the fix strategy. No unrelated exploration.       |
+| **Surgical Density**    | PRs must change ≤ 20 lines. No fluff.                                   |
+| **WSL Mandate**         | All shell execution routes through `wsl bash`. No PowerShell.           |
+| **Bored Persona**       | All external communication follows the "Bored Contributor" CASUAL tone. |
 
 ---
 
@@ -293,10 +148,8 @@ This is a miner-grade, production system. PRs must pass all three reviewer audit
 
 MIT © [Trevor Malon](https://github.com/Tmalone1250)
 
----
-
 <div align="center">
 
-_Built for the Bittensor network — where code quality is the proof of work._
+_Built for the Bittensor network — where code quality is proof of work._
 
 </div>

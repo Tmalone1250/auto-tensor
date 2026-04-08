@@ -103,18 +103,21 @@ class SurgicalScoutV3:
             return "UI"
         return "DX"
 
-    def scan(self):
+    def scan(self, target_repo: str = None):
         all_results = []
-        for repo in self.watchlist:
+        # If target_repo is a full URL, extract the full_name
+        if target_repo and target_repo.startswith("http"):
+            target_repo = target_repo.replace("https://github.com/", "").replace(".git", "").strip("/")
+            
+        repos_to_scan = [target_repo] if target_repo else self.watchlist
+        
+        for repo in repos_to_scan:
             print(f"Scouting {repo}...")
             issues = self.fetch_issues(repo)
             
             for issue in issues:
-                # Filter out PRs (GitHub Issues API includes PRs)
                 if "pull_request" in issue:
                     continue
-                    
-                # Comment count filter
                 if issue.get("comments", 0) > self.scout_settings.get("max_comments", 15):
                     continue
                 
@@ -124,6 +127,7 @@ class SurgicalScoutV3:
                 all_results.append({
                     "title": issue["title"],
                     "url": issue["html_url"],
+                    "body": issue.get("body", ""),
                     "category": category,
                     "delta_score": delta_score,
                     "repo": repo
@@ -132,28 +136,49 @@ class SurgicalScoutV3:
         # Rank by Delta Score
         all_results.sort(key=lambda x: x["delta_score"], reverse=True)
         
-        top_3 = all_results[:3]
+        # Take Top 5
+        top_5 = all_results[:5]
         
+        # Eager Strategy Generation
+        from core.llm import LlmClient
+        llm = LlmClient()
+        
+        print(f"Node Sync: Generating fix blueprints for {len(top_5)} targets...")
+        for target in top_5:
+            strategy_prompt = (
+                f"Propose a concise, surgical fix strategy for this GitHub issue.\n"
+                f"Repo: {target['repo']}\n"
+                f"Title: {target['title']}\n"
+                f"Body: {target['body'][:1000]}\n\n"
+                "What files should I check? What terminal commands should I run? "
+                "Be direct, technically precise, and bored."
+            )
+            target["strategy"] = llm.generate(strategy_prompt)
+            # Remove body from output to keep json lean
+            del target["body"]
+
         report = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "total_scanned": len(all_results),
-            "top_targets": top_3
+            "top_targets": top_5
         }
         
         report_path = self.scout_settings.get("report_path", "logs/scout_report.json")
         with open(report_path, "w") as f:
             json.dump(report, f, indent=2)
             
-        # Persona injection
-        from core.llm import LlmClient
-        llm = LlmClient()
-        summary_prompt = f"Summarize these scan results for {len(all_results)} issues across repos. Mention the top target: {top_3[0]['title'] if top_3 else 'None'}. Be casual and slightly bored."
+        summary_prompt = f"Summarize these scan results for {len(all_results)} issues. Mention the top target: {top_5[0]['title'] if top_5 else 'None'}. Be casual and bored."
         casual_summary = llm.generate(summary_prompt)
         
         print(f"\n[Bored Scout]: {casual_summary}")
-        print(f"Scan complete. Report generated at {report_path}")
-        return top_3
+        print(f"Scan complete. {len(top_5)} blueprints ready at {report_path}")
+        return top_5
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Auto-Tensor Scout Agent")
+    parser.add_argument("repo", nargs="?", help="Target repository URL or full name")
+    args = parser.parse_args()
+
     scout = SurgicalScoutV3()
-    top_3 = scout.scan()
+    scout.scan(target_repo=args.repo)
