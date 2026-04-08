@@ -6,6 +6,7 @@ import AuditTerminal from '../components/AuditTerminal';
 const API_BASE = 'http://localhost:8000';
 
 interface Target {
+  id: number;
   title: string;
   url: string;
   category: string;
@@ -79,6 +80,19 @@ const Intelligence: React.FC = () => {
     }
   };
 
+  const handleIgnore = async (targetId: number) => {
+    // Optimistic Update: Remove from local state immediately
+    setTargets(prev => prev.filter(t => t.id !== targetId));
+    
+    try {
+      await axios.post(`${API_BASE}/scout/ignore`, { issue_id: targetId });
+    } catch (err) {
+      console.error("Failed to ignore issue:", err);
+      // Optional: Refresh feed if server call fails
+      fetchIntelligence();
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Mission Intake Bar */}
@@ -135,7 +149,11 @@ const Intelligence: React.FC = () => {
                     <span className="text-[10px] bg-brand-success/10 text-brand-success px-2 py-0.5 rounded border border-brand-success/20 font-bold uppercase">
                       DELTA SCORE: {target.delta_score}
                     </span>
-                    <button className="p-1.5 text-slate-600 hover:text-brand-danger transition-colors">
+                    <button 
+                      onClick={() => handleIgnore(target.id)}
+                      className="p-1.5 text-slate-600 hover:text-brand-danger transition-colors"
+                      title="Dismiss Issue"
+                    >
                       <Trash2 size={14} />
                     </button>
                   </div>

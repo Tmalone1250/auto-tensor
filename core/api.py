@@ -19,6 +19,9 @@ app = FastAPI(title="Auto-Tensor Command Bridge")
 # --- Models ---
 class AgentRequest(BaseModel):
     agent_name: str
+
+class IgnoreRequest(BaseModel):
+    issue_id: int
     target: Optional[str] = None
 
 class RepoRequest(BaseModel):
@@ -365,6 +368,32 @@ def clear_logs():
             f.write(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] LOGS CLEARED BY OPERATOR ---\n")
             
         return {"status": "success", "archived_as": f"workflow_{timestamp}.log"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/scout/ignore")
+def ignore_issue(req: IgnoreRequest = Body(...)):
+    """Removes an issue from the scout report permanently."""
+    report_path = os.path.join("logs", "scout_report.json")
+    if not os.path.exists(report_path):
+        raise HTTPException(status_code=404, detail="Scout report not found")
+        
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        targets = data.get("top_targets", [])
+        original_len = len(targets)
+        data["top_targets"] = [t for t in targets if t.get("id") != req.issue_id]
+        
+        # If we actually removed something, decrement scanning count
+        if len(data["top_targets"]) < original_len:
+            data["total_scanned"] = max(0, data.get("total_scanned", 0) - 1)
+            
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            
+        return {"status": "success", "remaining": len(data["top_targets"])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
