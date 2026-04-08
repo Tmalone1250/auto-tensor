@@ -1,9 +1,13 @@
 import os
+import sys
 import requests
 import yaml
 import time
 import json
 from typing import List, Dict, Any
+
+# Ensure root is in sys.path so we can import core modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class SurgicalScoutV3:
     def __init__(self, config_path: str = "config.yaml"):
@@ -13,8 +17,9 @@ class SurgicalScoutV3:
         self.github_pat = os.getenv(self.config.get("github_pat_env", "GITHUB_PAT"))
         if not self.github_pat:
             print("Warning: GITHUB_PAT not found in environment. Rate limits will be very tight.")
-        
-        self.watchlist = self.config.get("repo_watchlist", [])
+
+        self.registry_path = "core/registry.json"
+        self.watchlist = self.load_watchlist()
         self.scout_settings = self.config.get("scout_settings", {})
         self.headers = {
             "Accept": "application/vnd.github.v3+json",
@@ -24,6 +29,17 @@ class SurgicalScoutV3:
         else:
             # Adjust stealth threshold for unauthenticated sessions
             self.scout_settings["stealth_threshold"] = 5
+
+    def load_watchlist(self) -> List[str]:
+        """Loads repository full names from core/registry.json."""
+        if os.path.exists(self.registry_path):
+            try:
+                with open(self.registry_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return [repo["full_name"] for repo in data.get("repos", [])]
+            except Exception as e:
+                print(f"Error loading registry: {e}")
+        return self.config.get("repo_watchlist", [])
 
     def check_rate_limit(self, response: requests.Response):
         remaining = int(response.headers.get("X-RateLimit-Remaining", 1000))
@@ -128,13 +144,16 @@ class SurgicalScoutV3:
         with open(report_path, "w") as f:
             json.dump(report, f, indent=2)
             
+        # Persona injection
+        from core.llm import LlmClient
+        llm = LlmClient()
+        summary_prompt = f"Summarize these scan results for {len(all_results)} issues across repos. Mention the top target: {top_3[0]['title'] if top_3 else 'None'}. Be casual and slightly bored."
+        casual_summary = llm.generate(summary_prompt)
+        
+        print(f"\n[Bored Scout]: {casual_summary}")
         print(f"Scan complete. Report generated at {report_path}")
         return top_3
 
 if __name__ == "__main__":
     scout = SurgicalScoutV3()
     top_3 = scout.scan()
-    if top_3:
-        print(f"\nTop Target: {top_3[0]['title']}")
-        print(f"URL: {top_3[0]['url']}")
-        print(f"Score: {top_3[0]['delta_score']}")

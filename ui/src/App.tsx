@@ -1,48 +1,68 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
-import AuditTerminal from './components/AuditTerminal';
-import GovernorGauge from './components/GovernorGauge';
-import { Activity, ShieldCheck, Clock, UserCheck, ScrollText } from 'lucide-react';
+import Intelligence from './pages/Intelligence';
+import Engineering from './pages/Engineering';
+import Quality from './pages/Quality';
+import { 
+  ShieldCheck, 
+  Clock, 
+  UserCheck, 
+  Cpu,
+  ChevronRight,
+  Database
+} from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
+interface MinerStatus {
+  github_status: {
+    remaining: number;
+    limit: number;
+    reset: number;
+  };
+  miner_uptime: string;
+  active_agent: string;
+  is_running: boolean;
+  current_task: string;
+  timestamp: string;
+}
+
 function App() {
-  const [activeTab, setActiveTab] = useState('missions');
-  const [status, setStatus] = useState<any>(null);
-  const [audit, setAudit] = useState<string>('');
-  const [logs, setLogs] = useState<string[]>([]);
+  const [status, setStatus] = useState<MinerStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const location = useLocation();
 
   const fetchData = async () => {
     try {
-      const [statusRes, auditRes, logsRes] = await Promise.all([
-        axios.get(`${API_BASE}/status`),
-        axios.get(`${API_BASE}/audit`),
-        axios.get(`${API_BASE}/logs`)
-      ]);
-
-      setStatus(statusRes.data);
-      setAudit(auditRes.data.content);
-      setLogs(logsRes.data.logs);
+      const res = await axios.get(`${API_BASE}/status`);
+      setStatus(res.data);
       setLoading(false);
     } catch (error) {
-      console.error('Data fetch failed:', error);
+      console.error('Status fetch failed:', error);
     }
   };
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 5000); // 5s Polling
+    const interval = setInterval(fetchData, 5000); 
     return () => clearInterval(interval);
   }, []);
+
+  // Breadcrumb mapping
+  const getBreadcrumb = () => {
+    const path = location.pathname.substring(1);
+    if (!path) return 'NOC Dashboard';
+    return path.charAt(0).toUpperCase() + path.slice(1) + ' Node';
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-brand-bg text-brand-success font-mono">
         <div className="animate-pulse flex flex-col items-center">
-          <Activity size={48} className="mb-4" />
-          <span className="text-xl uppercase tracking-widest font-bold">INITIALIZING WAR ROOM...</span>
+          <Cpu size={48} className="mb-4" />
+          <span className="text-xl uppercase tracking-widest font-bold">BOOTING NOC ENVIRONMENT...</span>
         </div>
       </div>
     );
@@ -50,84 +70,57 @@ function App() {
 
   return (
     <div className="flex h-screen bg-brand-bg text-slate-100 overflow-hidden font-mono">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar />
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header Stats */}
+        {/* NOC Unified Header */}
         <header className="h-20 border-b border-brand-accent flex items-center justify-between px-8 bg-slate-900/40 backdrop-blur-md sticky top-0 z-20">
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             <div className="flex flex-col">
+               <div className="flex items-center gap-2 text-slate-500 text-[10px] uppercase font-black tracking-widest">
+                  <Database size={12} />
+                  <span>NOC-MAIN</span>
+                  <ChevronRight size={10} />
+                  <span className="text-brand-success">{getBreadcrumb()}</span>
+               </div>
+               <h2 className="text-sm font-bold text-slate-200 mt-1 uppercase tracking-tighter">
+                 {status?.current_task || "System Nominal"}
+               </h2>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-8">
+            <div className="flex flex-col items-end">
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
                 <Clock size={10} className="text-brand-success" /> Uptime
               </span>
-              <span className="text-lg font-bold text-brand-success">{status?.miner_uptime || "00:00:00"}</span>
+              <span className="text-md font-bold text-brand-success leading-tight">{status?.miner_uptime || "00:00:00"}</span>
             </div>
-            <div className="w-px h-8 bg-brand-accent/50" />
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
-                <UserCheck size={10} className="text-brand-warning" /> Active Agent
-              </span>
-              <span className="text-lg font-bold text-brand-warning">{status?.active_agent || "None"}</span>
+            
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Agent State</span>
+              <div className="flex items-center gap-2">
+                <div className={`w-1.5 h-1.5 rounded-full ${status?.is_running ? 'bg-brand-success animate-pulse' : 'bg-slate-700'}`} />
+                <span className="text-xs font-bold uppercase">{status?.active_agent || "IDLE"}</span>
+              </div>
             </div>
-          </div>
 
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-brand-success/10 border border-brand-success/20 rounded-md">
-            <ShieldCheck size={14} className="text-brand-success" />
-            <span className="text-xs font-bold text-brand-success/80">Sovereign Protocol: Secure</span>
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-brand-success/10 border border-brand-success/20 rounded-md">
+              <ShieldCheck size={14} className="text-brand-success" />
+              <span className="text-[10px] font-black tracking-widest uppercase text-brand-success/80">Sovereign Protocol</span>
+            </div>
           </div>
         </header>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-auto p-8 custom-scrollbar">
-          <div className="max-w-6xl mx-auto space-y-8">
-            
-            {/* Mission / Dashboard View */}
-            {activeTab === 'missions' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="lg:col-span-2 space-y-8">
-                  <AuditTerminal content={audit} />
-                </div>
-                <div className="space-y-8">
-                  <GovernorGauge 
-                    remaining={status?.github_status?.remaining || 0} 
-                    limit={status?.github_status?.limit || 5000} 
-                  />
-                  
-                  {/* Recent Logs Summary */}
-                  <div className="bg-brand-bg/50 border border-brand-accent p-6 rounded-lg shadow-lg">
-                    <div className="flex items-center gap-2 mb-4">
-                      <ScrollText className="text-slate-500" size={18} />
-                      <h3 className="text-[10px] uppercase font-bold text-slate-500 tracking-[0.2em]">Workflow Logs</h3>
-                    </div>
-                    <div className="space-y-2">
-                      {logs.slice(-5).map((log, i) => (
-                        <div key={i} className="text-[10px] border-l-2 border-brand-accent/50 pl-2 py-1 text-slate-400 font-mono truncate">
-                          {log}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Other views (Placeholders) */}
-            {activeTab === 'status' && (
-              <div className="text-center py-20 animate-in fade-in duration-500">
-                <Activity size={64} className="mx-auto text-brand-warning/30 mb-6" />
-                <h2 className="text-2xl font-bold tracking-tighter text-slate-500 uppercase">Miner Telemetry Offline</h2>
-                <p className="text-sm text-slate-600 mt-2 italic">Connect to Gittensor pool to view metrics.</p>
-              </div>
-            )}
-
-            {activeTab === 'health' && (
-              <div className="text-center py-20 animate-in fade-in duration-500">
-                <ShieldCheck size={64} className="mx-auto text-brand-success/30 mb-6" />
-                <h2 className="text-2xl font-bold tracking-tighter text-slate-500 uppercase">All Systems Nominal</h2>
-                <p className="text-sm text-slate-600 mt-2 italic">Governor shielding at 100% capacity.</p>
-              </div>
-            )}
-
+        {/* Dynamic Node Content Area */}
+        <div className="flex-1 overflow-auto p-4 sm:p-8 custom-scrollbar">
+          <div className="max-w-6xl mx-auto">
+            <Routes>
+              <Route path="/" element={<Navigate to="/intelligence" replace />} />
+              <Route path="/intelligence" element={<Intelligence />} />
+              <Route path="/engineering" element={<Engineering />} />
+              <Route path="/quality" element={<Quality />} />
+            </Routes>
           </div>
         </div>
       </main>

@@ -74,11 +74,17 @@ def run():
     success, after_log = reproduce_after("logs/after_build.log")
 
     status = "SUCCESS" if success else "FAILED"
-    print(f"[CODER] Reproduction complete. After-state: {status}")
+    
+    # Persona injection
+    from core.llm import LlmClient
+    llm = LlmClient()
+    repro_msg = f"Reproduction complete for {REPO_SUBPATH}. Result: {status}. Fixed with --target override."
+    casual_msg = llm.generate(repro_msg + " Be casual, like you've done this a thousand times.")
+    
+    print(f"\n[Bored Coder]: {casual_msg}")
     logging.info(f"Coder: Reproduction complete. After-state: {status}")
 
     return {"before": before_log[:500], "after": after_log[:500], "success": success}
-
 
 if __name__ == "__main__":
     run()

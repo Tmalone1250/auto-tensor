@@ -1,0 +1,22 @@
+{
+  "repos": [
+    {
+      "id": "metamask-extension",
+      "full_name": "MetaMask/metamask-extension",
+      "html_url": "https://github.com/MetaMask/metamask-extension",
+      "added_at": "2026-04-07T12:00:00Z"
+    },
+    {
+      "id": "optimism",
+      "full_name": "ethereum-optimism/optimism",
+      "html_url": "https://github.com/ethereum-optimism/optimism",
+      "added_at": "2026-04-07T12:00:00Z"
+    },
+    {
+      "id": "bitcore",
+      "full_name": "bitpay/bitcore",
+      "html_url": "https://github.com/bitpay/bitcore",
+      "added_at": "2026-04-07T12:00:00Z"
+    }
+  ]
+}
