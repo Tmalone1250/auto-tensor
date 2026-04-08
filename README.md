@@ -14,7 +14,7 @@
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![Status](https://img.shields.io/badge/NOC-Online-22c55e?style=for-the-badge)]()
 
-_A surgical, multi-agent system that scouts high-value GitHub issues, proposes "Architect Strategies," and executes precision fixes via the Sovereign Hand-off — governed by the Triptych NOC._
+_A surgical, multi-agent system that scouts high-value GitHub issues, proposes "Architect Strategies," and executes precision fixes via the Sovereign Hand-off — governed by the Network Operations Center._
 
 </div>
 
@@ -24,7 +24,7 @@ _A surgical, multi-agent system that scouts high-value GitHub issues, proposes "
 
 **Auto-Tensor** is an autonomous SRE operator designed for high-velocity maintenance of Web3 infrastructure. It has evolved into a **Directed Execution** engine, replacing generic AI exploration with a strict **Architect -> Contractor** model.
 
-### The Triptych NOC Architecture
+### The Network Operations Center Architecture
 
 The system is managed via a three-node Network Operations Center:
 
@@ -62,7 +62,7 @@ graph LR
 
 ## 📸 Screenshots
 
-### Triptych NOC Console (v2.1)
+### Network Operations Center Console (v2.1)
 
 ![Auto-Tensor Dashboard](./ui/public/auto-tensor_screenshot.png)
 
