@@ -191,8 +191,8 @@ class SurgicalScoutV3:
                 f"Repo: {target['repo']}\n"
                 f"Title: {target['title']}\n"
                 f"Body: {target['body'][:1000]}\n\n"
-                "What files should I check? What terminal commands should I run? "
-                "Be direct, technically precise, and bored."
+                "Format your response using clear Markdown headers (##), bold text for file names, and "
+                "code blocks (```) for ALL terminal commands. Be direct, technically precise, and bored."
             )
             try:
                 target["strategy"] = llm.generate(strategy_prompt)

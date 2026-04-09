@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BrainCircuit, Search, Trash2, ArrowUpRight, Loader2, AlertCircle, ClipboardCheck } from 'lucide-react';
 import AuditTerminal from '../components/AuditTerminal';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://autotensor.duckdns.org';
 
@@ -166,15 +168,32 @@ const Intelligence: React.FC = () => {
                   </h4>
                   <p className="text-[10px] text-slate-500 font-mono mb-4">RE: {target.repo}</p>
 
-                  {/* Strategy Directive Card */}
-                  <div className="mb-6 p-4 bg-black/60 border border-brand-accent/30 rounded text-[11px] font-mono leading-relaxed relative">
-                    <div className="absolute top-2 right-2 opacity-10">
+                  <div className="mb-6 p-4 bg-black/60 border border-brand-accent/30 rounded text-[11px] font-sans leading-relaxed relative overflow-hidden">
+                    <div className="absolute top-2 right-2 opacity-10 pointer-events-none">
                       <ClipboardCheck size={20} />
                     </div>
-                    <span className="text-brand-success/50 font-black text-[9px] uppercase tracking-widest block mb-2">Architect Strategy</span>
-                    <p className="text-slate-400 italic">
-                      {target.strategy || "No strategy generated."}
-                    </p>
+                    <span className="text-brand-success/50 font-black text-[9px] uppercase tracking-widest block mb-3 border-b border-brand-accent/20 pb-1">Architect Strategy</span>
+                    <div className="prose prose-invert max-w-none prose-sm">
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h2: ({node, ...props}) => <h2 className="text-brand-success font-black border-b border-brand-accent/30 pb-1 mb-2 mt-4 text-[13px] uppercase tracking-widest" {...props} />,
+                          h3: ({node, ...props}) => <h3 className="text-slate-100 font-bold mb-2 mt-3 text-[12px]" {...props} />,
+                          p: ({node, ...props}) => <p className="text-slate-300 text-[11px] leading-relaxed mb-3 font-medium" {...props} />,
+                          code: ({node, inline, ...props}: any) => (
+                            inline 
+                              ? <code className="bg-slate-900 text-brand-success px-1.5 py-0.5 rounded font-mono text-[10px] border border-brand-accent/30" {...props} />
+                              : <code className="block bg-slate-950 p-3 rounded-md border border-brand-accent/50 my-3 overflow-x-auto font-mono text-[10px] text-brand-success custom-scrollbar" {...props} />
+                          ),
+                          pre: ({node, ...props}) => <pre className="bg-transparent p-0 m-0" {...props} />,
+                          ul: ({node, ...props}) => <ul className="list-disc list-inside space-y-1 mb-4 ml-1 text-slate-400 text-[11px]" {...props} />,
+                          li: ({node, ...props}) => <li className="mb-0.5" {...props} />,
+                          strong: ({node, ...props}) => <strong className="text-brand-success font-bold" {...props} />
+                        }}
+                      >
+                        {target.strategy || "_No strategy generated._"}
+                      </ReactMarkdown>
+                    </div>
                   </div>
 
                   <button
