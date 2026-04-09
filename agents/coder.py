@@ -94,8 +94,10 @@ def run():
     llm = LlmClient()
     
     # The 'Secret Sauce' Prompt
+    body_context = params.get("body", "No additional context.")
     directive_prompt = (
-        f"SYSTEM: You are a bored expert contributor. An architect has already scouted this issue and provided the following STRATEGY: [{strategy}]. "
+        f"SYSTEM: You are a bored expert contributor. An architect has already scouted this issue and provided the following STRATEGY: [{strategy}].\n"
+        f"FULL ISSUE CONTEXT: {body_context[:2000]}\n\n"
         f"Your goal is to execute this specific fix with 100% precision. Do not explore unrelated files. Do not refactor. Just fulfill the directive and verify the build."
     )
     

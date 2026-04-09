@@ -79,7 +79,7 @@ function App() {
             <div className="flex flex-col">
                <div className="flex items-center gap-2 text-slate-500 text-[10px] uppercase font-black tracking-widest">
                   <Database size={12} />
-                  <span>NOC-MAIN</span>
+                  <span>AT-MAIN</span>
                   <ChevronRight size={10} />
                   <span className="text-brand-success">{getBreadcrumb()}</span>
                </div>

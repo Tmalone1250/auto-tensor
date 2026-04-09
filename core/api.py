@@ -13,6 +13,7 @@ from pydantic import BaseModel
 # Ensure root is in sys.path so we can import core.health_check
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.health_check import check_rate_limit
+from core.skill_writer import record_mission_success
 
 app = FastAPI(title="Auto-Tensor Command Bridge")
 
@@ -231,7 +232,12 @@ def get_approvals():
 @app.post("/approvals/action")
 def approval_action(action: ApprovalAction):
     """Executes a stage in the approval workflow."""
-    # Placeholder for actual git/github orchestration
+    if action.action == "publish":
+        try:
+            record_mission_success()
+        except Exception as e:
+            print(f"[API] Skill synthesis failed: {e}")
+            
     return {"status": "success", "action": action.action, "id": action.id}
 
 @app.get("/audit")
@@ -314,6 +320,7 @@ def promote_issue(issue: Dict = Body(...)):
     directive = {
         "repo": repo,
         "title": title,
+        "body": issue.get("body", "No body context provided."),
         "strategy": strategy,
         "timestamp": datetime.now().isoformat()
     }

@@ -1,0 +1,9 @@
+# Auto-Tensor Local Knowledge Base (.ai-rules)
+
+1. **WSL Mandate**: All terminal commands, builds, and test executions MUST occur within the WSL 2 environment. Use `wslpath` for path conversions.
+2. **Skill Primacy**: Before requesting LLM reasoning for a task, check `SKILLS.md` for a documented pattern or solution.
+3. **Surgical Density**: PRs should prioritize logic over volume. Limit changes to ≤ 20 lines where possible.
+4. **Resilient Communication**: ALWAYS use the `LlmClient` to ensure backoff and model fallback.
+5. **Typescript Hardening**: In TS/JS projects, prioritize replacing `any` with strict interfaces.
+6. **Bored Persona**: All PR descriptions and external communications must follow the "Bored Contributor" casual/minimal tone.
+7. **Zero-Warning Protocol**: The browser console and build logs must be clean of avoidable warnings.
