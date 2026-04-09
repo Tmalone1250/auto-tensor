@@ -1,0 +1,17 @@
+# Settings for the Scout Agent
+# Leave repo_watchlist empty if you only want to scan specific URLs via the UI
+repo_watchlist: []
+
+# Ensure this matches the variable name in your .env file
+github_pat_env: GITHUB_KEY
+
+scout_settings:
+  max_comments: 15
+  labels:
+    - bug
+    - performance
+    - a11y
+    - TypeScript
+  stealth_threshold: 100
+  sleep_seconds: 60
+  report_path: "logs/scout_report.json"

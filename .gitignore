@@ -47,8 +47,6 @@ Thumbs.db
 
 # Project-specific
 workspace/
-config.yaml
-!config.yaml.example
 .env
 .env.local
 .env.development.local
