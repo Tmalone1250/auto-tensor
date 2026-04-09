@@ -132,9 +132,14 @@ class ProcessManager:
 pm = ProcessManager()
 
 # --- CORS ---
+# --- CORS Hardening for Hybrid Deployment ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",          # Local Development
+        "https://auto-tensor.vercel.app",   # Future Production Vercel (Primary)
+        "https://*.vercel.app"              # Vercel Preview Deployments
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

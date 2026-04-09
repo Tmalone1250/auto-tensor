@@ -4,7 +4,7 @@ import { Terminal, Cpu, Loader2, RotateCcw, AlertTriangle, CheckCircle } from 'l
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL;
 
 const Engineering: React.FC = () => {
   const [diff, setDiff] = useState('');

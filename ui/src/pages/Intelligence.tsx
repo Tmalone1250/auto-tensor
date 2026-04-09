@@ -3,7 +3,7 @@ import axios from 'axios';
 import { BrainCircuit, Search, Trash2, ArrowUpRight, Loader2, AlertCircle, ClipboardCheck } from 'lucide-react';
 import AuditTerminal from '../components/AuditTerminal';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL;
 
 interface Target {
   id: number;
