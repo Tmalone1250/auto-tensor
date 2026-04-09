@@ -125,16 +125,20 @@ class SurgicalScoutV3:
 
         return targets
 
-    def _get_strategy_prompt(self, target: Dict) -> str:
-        persona_note = "Identify the absolute top 3 highest-priority, surgical-fix candidates. Quality over quantity. Focus on candidates fixable with a few files."
+    def _get_batch_prompt(self, targets: List[Dict]) -> str:
+        persona_note = "Identify the absolute top highest-priority, surgical-fix candidates. Quality over quantity."
+        issues_text = ""
+        for t in targets:
+            issues_text += f"---\nID: {t['id']}\nRepo: {t['repo']}\nTitle: {t['title']}\nBody: {t.get('body', '')[:800]}\n"
+        
         return (
             f"{persona_note}\n\n"
-            f"Propose a concise, surgical fix strategy for this GitHub issue.\n"
-            f"Repo: {target['repo']}\n"
-            f"Title: {target['title']}\n"
-            f"Body: {target.get('body', '')[:1000]}\n\n"
-            "Format your response using clear Markdown headers (##), bold text for file names, and "
-            "code blocks (```) for ALL terminal commands. Be direct, technically precise, and bored."
+            f"Propose a concise, surgical fix strategy for each of the following GitHub issues.\n\n"
+            f"{issues_text}\n"
+            "Return your analysis as a structured JSON object with a 'results' key containing an array of objects. "
+            "Each object MUST use these exact keys: 'id' (integer from the input), 'strategy' (detailed Markdown string), "
+            "'surgical_files' (list of strings). Be direct, technically precise, and bored. "
+            "Return ONLY the JSON object. No preamble."
         )
 
     def scan(self, target_repo: str = None):
@@ -180,12 +184,28 @@ class SurgicalScoutV3:
         print(f"Node Sync: Generating fix blueprints for {len(top_3)} candidates...")
         sys.stdout.flush()
         
-        for target in top_3:
-            try:
-                target["strategy"] = llm.generate(self._get_strategy_prompt(target))
-            except Exception as e:
-                print(f"[Bored Scout]: LLM Strategy failure for {target['title']}: {e}")
-                sys.stdout.flush()
+        print(f"[Bored Scout]: Analyzing Batch ({len(top_3)} targets)...")
+        sys.stdout.flush()
+        
+        try:
+            raw_response = llm.generate(self._get_batch_prompt(top_3))
+            # Clean potential Markdown wrapping
+            clean_json = raw_response.strip().strip("```json").strip("```").strip()
+            batch_data = json.loads(clean_json)
+            results_map = {res["id"]: res for res in batch_data.get("results", [])}
+            
+            for target in top_3:
+                res = results_map.get(target["id"])
+                if res:
+                    target["strategy"] = res.get("strategy", "No strategy generated.")
+                    target["surgical_files"] = res.get("surgical_files", [])
+                else:
+                    target["strategy"] = "Strategist Offline: Batch slice missing for this ID."
+                    
+        except Exception as e:
+            print(f"[Bored Scout]: Batch Analysis failure: {e}")
+            sys.stdout.flush()
+            for target in top_3:
                 target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
             
         report = {
@@ -207,7 +227,7 @@ class SurgicalScoutV3:
         return top_3
 
     def refine_blueprints(self):
-        """Re-triggers LLM strategy generation for failed targets in the last report."""
+        """Re-triggers LLM strategy generation for failed targets in the last report using Batching."""
         report_path = self.scout_settings.get("report_path", "logs/scout_report.json")
         if not os.path.exists(report_path):
             print(f"[Bored Scout]: Refinement failed. No report found at {report_path}")
@@ -219,39 +239,49 @@ class SurgicalScoutV3:
             
         top_targets = data.get("top_targets", [])
         failure_keywords = ["offline", "retry", "limit", "failed"]
-        refined_count = 0
         
-        from core.llm import LlmClient
-        llm = LlmClient()
-        
-        print(f"[Bored Scout]: Blueprint Refinement active. Checking for failures...")
-        sys.stdout.flush()
-        
+        targets_to_refine = []
         for target in top_targets:
             strategy = (target.get("strategy") or "").lower()
-            needs_refinement = any(kw in strategy for kw in failure_keywords)
-            
-            if needs_refinement:
-                print(f"  Refining blueprint for: {target['title']}...")
-                sys.stdout.flush()
-                try:
-                    target["strategy"] = llm.generate(self._get_strategy_prompt(target))
-                    refined_count += 1
-                except Exception as e:
-                    print(f"  Refinement failed for {target['title']}: {e}")
-                    sys.stdout.flush()
+            if any(kw in strategy for kw in failure_keywords):
+                targets_to_refine.append(target)
             else:
                 print(f"  Skipping valid strategy for: {target['title']}")
                 sys.stdout.flush()
                     
-        if refined_count > 0:
+        if not targets_to_refine:
+            print("No blueprints required refinement.")
+            sys.stdout.flush()
+            return data
+
+        from core.llm import LlmClient
+        llm = LlmClient()
+        
+        print(f"[Bored Scout]: Analyzing Batch ({len(targets_to_refine)} blueprints for refinement)...")
+        sys.stdout.flush()
+        
+        try:
+            raw_response = llm.generate(self._get_batch_prompt(targets_to_refine))
+            clean_json = raw_response.strip().strip("```json").strip("```").strip()
+            batch_data = json.loads(clean_json)
+            results_map = {res["id"]: res for res in batch_data.get("results", [])}
+            
+            for target in targets_to_refine:
+                res = results_map.get(target["id"])
+                if res:
+                    target["strategy"] = res.get("strategy", "No strategy generated.")
+                    target["surgical_files"] = res.get("surgical_files", [])
+                    print(f"  Successfully refined: {target['title']}")
+                else:
+                    print(f"  Refinement slice missing for: {target['title']}")
+                sys.stdout.flush()
+                
             data["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             with open(report_path, "w") as f:
                 json.dump(data, f, indent=2)
-            print(f"Refinement complete. {refined_count} blueprints updated.")
-            sys.stdout.flush()
-        else:
-            print("No blueprints required refinement.")
+            print(f"Refinement complete.")
+        except Exception as e:
+            print(f"[Bored Scout]: Batch Refinement failure: {e}")
             sys.stdout.flush()
             
         return data

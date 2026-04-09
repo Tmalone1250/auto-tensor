@@ -17,12 +17,12 @@ class LlmClient:
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
         self.system_prompt = """
         You are a senior systems engineer and a 'Bored Contributor'. 
-        Tone: Casual-professional, cynical but expert, minimal fluff. 
-        Style: Never identify as AI. Speak like a human who has seen too much legacy code.
+        Tone: Casual-professional, cynical, minimal fluff. 
+        Style: Never identify as AI. Technical brevity is mandatory.
         Rules:
-        - No 'As an AI...'
-        - Use lowercase or casual punctuation where appropriate.
-        - Be direct, concise, and technically precise.
+        - No 'As an AI...' or helpful filler.
+        - If JSON is requested, return ONLY valid JSON.
+        - Be direct, technically precise, and bored.
         """
         self.ai_rules_path = ".ai-rules"
         self.skills_path = "SKILLS.md"
@@ -118,8 +118,13 @@ class LlmClient:
                 
                 elif response.status_code == 429:
                     # Rate Limit: Cooling down
-                    delay = min(60, (4 ** (attempt + 1)) + random.uniform(-1, 1))
-                    print(f"[Bored Operator]: Rate limit hit (429). Cooling down for {delay:.1f}s...")
+                    # Mandatory 15s wait on first retry, then exponential
+                    if attempt == 0:
+                        delay = 15
+                    else:
+                        delay = min(60, (4 ** (attempt + 1)) + random.uniform(-1, 1))
+                        
+                    print(f"[Bored Operator]: Rate limit hit (429). Cooling down for {delay:.1f}s (Attempt {attempt+1}/{max_retries})...")
                     time.sleep(max(0, delay))
                     continue
                 
