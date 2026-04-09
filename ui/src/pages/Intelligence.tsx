@@ -46,14 +46,18 @@ const Intelligence: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const startScan = async () => {
+  const handleScan = async () => {
     if (!scanUrl) return;
     setScanning(true);
-    setTargets([]); // Clear and Replace logic
+    setTargets([]); 
+
+    let finalUrl = scanUrl.trim();
+    if (finalUrl && !finalUrl.startsWith('http')) {
+      finalUrl = `https://github.com/${finalUrl}`;
+    }
+
     try {
-      await axios.post(`${API_BASE}/repo/scan`, { url: scanUrl });
-      // Polling or waiting for scout_report.json to update would go here.
-      // For this implementation, we'll wait for the logs to signal completion.
+      await axios.post(`${API_BASE}/repo/scan`, { url: finalUrl });
     } catch (err) {
       alert("Scan failed to initiate.");
     } finally {
@@ -110,7 +114,7 @@ const Intelligence: React.FC = () => {
             />
           </div>
           <button
-            onClick={startScan}
+            onClick={handleScan}
             disabled={scanning}
             className="px-8 py-3 bg-brand-success/10 hover:bg-brand-success/20 border border-brand-success/50 text-brand-success text-xs font-black uppercase tracking-widest transition-all disabled:opacity-30 flex items-center justify-center gap-2"
           >

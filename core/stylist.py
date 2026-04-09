@@ -5,7 +5,7 @@ from collections import Counter
 
 class PRStylist:
     def __init__(self, token=None):
-        self.token = token or os.getenv("GITHUB_PAT")
+        self.token = token or os.getenv("GITHUB_KEY")
         self.headers = {"Accept": "application/vnd.github.v3+json"}
         if self.token:
             self.headers["Authorization"] = f"token {self.token}"

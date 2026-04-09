@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import sys
 import requests
 import yaml
@@ -14,9 +16,9 @@ class SurgicalScoutV3:
         with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
         
-        self.github_pat = os.getenv(self.config.get("github_pat_env", "GITHUB_PAT"))
+        self.github_pat = os.getenv("GITHUB_KEY")
         if not self.github_pat:
-            print("Warning: GITHUB_PAT not found in environment. Rate limits will be very tight.")
+            print("Warning: GITHUB_KEY not found in environment. Rate limits will be very tight.")
 
         self.registry_path = "core/registry.json"
         self.watchlist = self.load_watchlist()

@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import shutil
 import time
 import sys
@@ -9,6 +11,9 @@ from typing import Optional, List, Dict
 from fastapi import FastAPI, Body, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+GITHUB_KEY = os.getenv("GITHUB_KEY")
+print(f"DEBUG: GitHub Token Loaded. Starts with: {GITHUB_KEY[:4] if GITHUB_KEY else 'NONE'}")
 
 # Ensure root is in sys.path so we can import core.health_check
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

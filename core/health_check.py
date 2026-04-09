@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 
 # --- Configuration ---
-GITHUB_PAT = os.getenv("GITHUB_PAT")
+GITHUB_KEY = os.getenv("GITHUB_KEY")
 QUOTA_THRESHOLD = 750       # 15% of 5,000
 HEARTBEAT_LOW = "HEARTBEAT_LOW"
 HEARTBEAT_OK  = "HEARTBEAT_OK"
@@ -23,8 +23,8 @@ logging.basicConfig(
 
 def _headers() -> dict:
     h = {"Accept": "application/vnd.github.v3+json"}
-    if GITHUB_PAT:
-        h["Authorization"] = f"token {GITHUB_PAT}"
+    if GITHUB_KEY:
+        h["Authorization"] = f"token {GITHUB_KEY}"
     return h
 
 
