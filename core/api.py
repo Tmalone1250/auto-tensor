@@ -17,6 +17,14 @@ from pydantic import BaseModel
 GITHUB_KEY = os.getenv("GITHUB_KEY")
 print(f"DEBUG: GitHub Token Loaded. Starts with: {GITHUB_KEY[:4] if GITHUB_KEY else 'NONE'}")
 
+# --- Global State Manager ---
+SYSTEM_STATE = {
+    "active_agent": "None",
+    "is_running": False,
+    "current_repo": "None",
+    "last_run": None
+}
+
 # Ensure root is in sys.path so we can import core.health_check
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.health_check import check_rate_limit
@@ -104,6 +112,12 @@ class ProcessManager:
             )
             self.active_agent = agent_name
             self.current_task = f"Executing {agent_name} mission..."
+            
+            # Sync with Global State
+            global SYSTEM_STATE
+            SYSTEM_STATE["active_agent"] = agent_name.capitalize()
+            SYSTEM_STATE["is_running"] = True
+            
             return {"status": "started", "agent": agent_name}
         except Exception as e:
             return {"error": str(e)}
@@ -120,6 +134,12 @@ class ProcessManager:
             self.process = None
             self.active_agent = None
             self.current_task = "Idle (Terminated)"
+
+            # Sync with Global State
+            global SYSTEM_STATE
+            SYSTEM_STATE["active_agent"] = "None"
+            SYSTEM_STATE["is_running"] = False
+
             return {"status": "terminated"}
         return {"error": "No active agent to stop."}
 
@@ -141,6 +161,11 @@ pm = ProcessManager()
 
 def run_scout_sync(url: str):
     """Refactored Scout Orchestrator: Direct import with real-time log redirection."""
+    global SYSTEM_STATE
+    SYSTEM_STATE["active_agent"] = "Scout"
+    SYSTEM_STATE["is_running"] = True
+    SYSTEM_STATE["current_repo"] = url
+    
     log_path = os.path.join("logs", "scout.log")
     os.makedirs("logs", exist_ok=True)
     
@@ -161,6 +186,9 @@ def run_scout_sync(url: str):
             log_file.write(f"\n[CRITICAL ERROR] Scout crash detected:\n")
             traceback.print_exc(file=log_file)
             log_file.flush()
+    finally:
+        SYSTEM_STATE["active_agent"] = "None"
+        SYSTEM_STATE["is_running"] = False
 
 # --- CORS ---
 # --- CORS Hardening for Hybrid Deployment ---
@@ -186,13 +214,17 @@ def get_status():
     minutes, seconds = divmod(remainder, 60)
     uptime_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    info = pm.get_info()
+    # Use Global SYSTEM_STATE for accurate UI reporting
+    active_agent = SYSTEM_STATE["active_agent"]
+    is_running = SYSTEM_STATE["is_running"]
+    current_task = f"Executing {active_agent} mission..." if is_running else "Idle"
+
     return {
         "github_status": rate_limit,
         "miner_uptime": uptime_str,
-        "active_agent": info["active_agent"],
-        "is_running": info["is_running"],
-        "current_task": info["current_task"],
+        "active_agent": active_agent,
+        "is_running": is_running,
+        "current_task": current_task,
         "timestamp": datetime.now().isoformat()
     }
 
