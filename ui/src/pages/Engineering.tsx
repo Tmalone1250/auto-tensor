@@ -4,7 +4,7 @@ import { Terminal, Cpu, Loader2, RotateCcw, AlertTriangle, CheckCircle } from 'l
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = import.meta.env.VITE_API_URL || 'https://autotensor.duckdns.org';
 
 const Engineering: React.FC = () => {
   const [diff, setDiff] = useState('');
@@ -88,7 +88,7 @@ const Engineering: React.FC = () => {
         <div className="space-y-4">
           <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-6">Coder Telemetry</h3>
           <div className="bg-black/40 border border-brand-accent rounded-lg p-4 h-[500px] font-mono text-[10px] overflow-y-auto space-y-1 custom-scrollbar">
-            {logs.map((log, i) => (
+            {logs?.map((log, i) => (
               <div key={i} className="text-slate-400 border-l border-brand-accent/30 pl-2">
                 <span className="text-slate-100/40 mr-2">{'>'}</span>
                 {log}

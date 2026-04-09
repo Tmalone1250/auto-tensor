@@ -3,7 +3,7 @@ import axios from 'axios';
 import { BrainCircuit, Search, Trash2, ArrowUpRight, Loader2, AlertCircle, ClipboardCheck } from 'lucide-react';
 import AuditTerminal from '../components/AuditTerminal';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = import.meta.env.VITE_API_URL || 'https://autotensor.duckdns.org';
 
 interface Target {
   id: number;
@@ -142,7 +142,7 @@ const Intelligence: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {targets.map((target, idx) => (
+              {targets?.map((target, idx) => (
                 <div key={idx} className="bg-brand-bg/50 border border-brand-accent p-5 rounded-lg group hover:border-brand-success/50 transition-all shadow-lg relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-brand-success/20" />
                   <div className="flex items-start justify-between mb-4">
@@ -197,7 +197,7 @@ const Intelligence: React.FC = () => {
             </button>
           </div>
           <div className="bg-black/40 border border-brand-accent rounded-lg p-4 h-[600px] font-mono text-[10px] overflow-y-auto space-y-1 custom-scrollbar">
-            {logs.map((log, i) => {
+            {logs?.map((log, i) => {
               const isError = log.includes("LLM Error") || log.includes("Exception");
               const isContinuation = log.startsWith("  ");
               return (

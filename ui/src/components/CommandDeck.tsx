@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Square, Search, Terminal, ShieldAlert, Cpu, Plus, Loader2, Globe } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = import.meta.env.VITE_API_URL || 'https://autotensor.duckdns.org';
 
 interface Repo {
   id: string;
@@ -108,7 +108,7 @@ const CommandDeck: React.FC = () => {
               className="w-full bg-slate-950 border border-brand-accent rounded-md py-4 pl-12 pr-4 text-sm font-mono text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-success/50 transition-all shadow-inner appearance-none"
             >
               <option value="">SELECT MANAGED REPO</option>
-              {managedRepos.map((repo) => (
+              {managedRepos?.map((repo) => (
                 <option key={repo.id} value={repo.full_name}>
                   {repo.full_name}
                 </option>

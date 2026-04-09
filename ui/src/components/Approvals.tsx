@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Check, Code2, GitCommit, FileText, Send, Loader2, ShieldAlert } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = import.meta.env.VITE_API_URL || 'https://autotensor.duckdns.org';
 
 interface PendingApproval {
   id: string;
@@ -68,7 +68,7 @@ const Approvals: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 px-2 lg:px-0">
-      {approvals.map((item) => (
+      {approvals?.map((item) => (
         <div key={item.id} className="bg-brand-bg/60 border border-brand-accent rounded-lg shadow-2xl relative overflow-hidden group">
           {/* Subtle Repo Badge */}
           <div className="absolute top-0 right-0 bg-brand-accent/20 px-4 py-1 border-b border-l border-brand-accent rounded-bl-lg">

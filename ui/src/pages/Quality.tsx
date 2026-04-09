@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Check, Code2, GitCommit, FileText, Send, Loader2, ShieldAlert, ClipboardCheck } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = import.meta.env.VITE_API_URL || 'https://autotensor.duckdns.org';
 
 interface PendingApproval {
   id: string;
@@ -79,7 +79,7 @@ const Quality: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-8">
-              {approvals.map((item) => (
+              {approvals?.map((item) => (
                 <div key={item.id} className="bg-brand-bg/60 border border-brand-accent rounded-lg shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-brand-warning" />
                   <div className="p-6">
@@ -158,7 +158,7 @@ const Quality: React.FC = () => {
         <div className="space-y-4">
           <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-6">Reviewer Logs</h3>
           <div className="bg-black/40 border border-brand-accent rounded-lg p-4 h-[600px] font-mono text-[10px] overflow-y-auto space-y-1 custom-scrollbar">
-            {logs.map((log, i) => (
+            {logs?.map((log, i) => (
               <div key={i} className="text-slate-400 border-l border-brand-accent/30 pl-2">
                 <span className="text-brand-warning/40 mr-2">{'>'}</span>
                 {log}
