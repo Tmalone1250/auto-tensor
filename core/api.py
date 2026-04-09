@@ -428,8 +428,9 @@ def get_coder_diff():
 
 @app.post("/logs/clear")
 def clear_logs():
-    """Archives the current workflow log and starts a new one."""
-    log_path = os.path.join("logs", "workflow.log")
+    """Wipes the active logs to prevent 'Sticky Logs' in the UI."""
+    workflow_log = os.path.join("logs", "workflow.log")
+    scout_log = os.path.join("logs", "scout.log")
     archive_dir = os.path.join("logs", "archive")
     
     try:
@@ -437,15 +438,26 @@ def clear_logs():
             os.makedirs(archive_dir)
             
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if os.path.exists(log_path):
+
+        # Handle Workflow Log (Archive)
+        if os.path.exists(workflow_log):
             archive_path = os.path.join(archive_dir, f"workflow_{timestamp}.log")
-            shutil.move(log_path, archive_path)
-            
-        with open(log_path, "w", encoding="utf-8") as f:
+            shutil.move(workflow_log, archive_path)
+        
+        # Start fresh workflow log
+        with open(workflow_log, "w", encoding="utf-8") as f:
             f.write(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] LOGS CLEARED BY OPERATOR ---\n")
+
+        # Handle Scout Log (Truncate - Physical Wipe)
+        # We use 'w' mode to truncate it to 0 bytes
+        with open(scout_log, "w", encoding="utf-8") as f:
+            pass 
             
-        return {"status": "success", "archived_as": f"workflow_{timestamp}.log"}
+        return {"status": "success", "msg": "Logs physically truncated and archived."}
     except Exception as e:
+        # Return success if file doesn't exist, otherwise error
+        if not os.path.exists(scout_log) and not os.path.exists(workflow_log):
+             return {"status": "success", "msg": "Logs already clear."}
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/scout/ignore")
