@@ -190,6 +190,35 @@ def run_scout_sync(url: str):
         SYSTEM_STATE["active_agent"] = "None"
         SYSTEM_STATE["is_running"] = False
 
+def run_refine_sync():
+    """Blueprint Refinement Orchestrator: Re-generates failed strategies in place."""
+    global SYSTEM_STATE
+    SYSTEM_STATE["active_agent"] = "Scout (Refining)"
+    SYSTEM_STATE["is_running"] = True
+    
+    log_path = os.path.join("logs", "scout.log")
+    os.makedirs("logs", exist_ok=True)
+    
+    try:
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            with contextlib.redirect_stdout(log_file), contextlib.redirect_stderr(log_file):
+                print(f"\n--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: REFINING FAILED BLUEPRINTS ---")
+                sys.stdout.flush()
+                
+                scout = SurgicalScoutV3(config_path="config.yaml")
+                scout.refine_blueprints()
+                
+                print(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: REFINEMENT COMPLETE ---")
+                sys.stdout.flush()
+    except Exception:
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(f"\n[CRITICAL ERROR] Refinement crash detected:\n")
+            traceback.print_exc(file=log_file)
+            log_file.flush()
+    finally:
+        SYSTEM_STATE["active_agent"] = "None"
+        SYSTEM_STATE["is_running"] = False
+
 # --- CORS ---
 # --- CORS Hardening for Hybrid Deployment ---
 app.add_middleware(
@@ -412,6 +441,12 @@ def get_scout_report():
             return json.load(f)
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/scout/refine")
+def refine_scout_report(background_tasks: BackgroundTasks):
+    """Triggers refinement of failed strategies in the current report."""
+    background_tasks.add_task(run_refine_sync)
+    return {"status": "started", "agent": "scout", "task": "refining"}
 
 @app.get("/coder/diff")
 def get_coder_diff():

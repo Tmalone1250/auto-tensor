@@ -22,6 +22,7 @@ const Intelligence: React.FC = () => {
   const [scanUrl, setScanUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [refining, setRefining] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
   const fetchIntelligence = async () => {
@@ -64,6 +65,19 @@ const Intelligence: React.FC = () => {
       alert("Scan failed to initiate.");
     } finally {
       setScanning(false);
+    }
+  };
+
+  const handleRefine = async () => {
+    setRefining(true);
+    try {
+      await axios.post(`${API_BASE}/scout/refine`);
+      // Start polling for results
+      setTimeout(fetchIntelligence, 2000);
+    } catch (err) {
+      console.error("Refinement failed:", err);
+    } finally {
+      setRefining(false);
     }
   };
 
@@ -139,7 +153,18 @@ const Intelligence: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Target Queue */}
         <div className="space-y-4">
-          <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em] mb-6">Target Queue</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xs font-black uppercase text-slate-500 tracking-[0.2em]">Target Queue</h3>
+            <button
+              onClick={handleRefine}
+              disabled={loading || scanning || refining || targets.length === 0}
+              className="flex items-center gap-1.5 text-[9px] font-black uppercase text-brand-success/60 hover:text-brand-success border border-brand-success/20 hover:border-brand-success/40 px-2 py-0.5 rounded transition-all bg-black/20 disabled:opacity-30"
+              title="Refresh FAILED strategies"
+            >
+              {refining ? <Loader2 className="animate-spin" size={10} /> : <ArrowUpRight className="rotate-45" size={10} />}
+              Refresh Blueprints
+            </button>
+          </div>
           {loading ? <Loader2 className="animate-spin text-brand-success" /> : targets.length === 0 && !scanning ? (
             <div className="text-center py-12 border border-dashed border-brand-accent/30 rounded-lg">
               <p className="text-[10px] text-slate-600 uppercase font-black tracking-widest leading-loose">
@@ -173,7 +198,12 @@ const Intelligence: React.FC = () => {
                       <ClipboardCheck size={20} />
                     </div>
                     <span className="text-brand-success/50 font-black text-[9px] uppercase tracking-widest block mb-3 border-b border-brand-accent/20 pb-1">Architect Strategy</span>
-                    <div className="prose prose-invert max-w-none prose-sm">
+                    <div className="prose prose-invert max-w-none prose-sm relative">
+                      {refining && (target.strategy?.toLowerCase().includes('offline') || target.strategy?.toLowerCase().includes('failed')) && (
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-10 rounded">
+                           <Loader2 className="animate-spin text-brand-success" size={20} />
+                        </div>
+                      )}
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]}
                         components={{

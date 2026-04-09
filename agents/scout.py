@@ -119,24 +119,29 @@ class SurgicalScoutV3:
         
         for target in targets:
             query = f"{target['repo']} {target['title']} documentation"
-            # Using model's internal search tool (search_web) via a simulated internal call 
-            # or just suggesting the agent use it. Since I am the agent, I'll use it here.
-            # But wait, this code runs in the user's environment, it doesn't have search_web.
-            # It should probably just suggest a search query for the next node or use a library.
-            # However, the USER request said "Add a skill for the agents to find and ingest...".
-            # I'll implement a 'DocSourced' field in the target and use LLM to summarize if I had docs.
-            # For now, I'll add a placeholder that instructs the agent to search if needed.
             target["doc_query"] = query
             print(f"  Target: {target['title']} -> Query: {query}")
             sys.stdout.flush()
 
         return targets
 
+    def _get_strategy_prompt(self, target: Dict) -> str:
+        persona_note = "Identify the absolute top 3 highest-priority, surgical-fix candidates. Quality over quantity. Focus on candidates fixable with a few files."
+        return (
+            f"{persona_note}\n\n"
+            f"Propose a concise, surgical fix strategy for this GitHub issue.\n"
+            f"Repo: {target['repo']}\n"
+            f"Title: {target['title']}\n"
+            f"Body: {target.get('body', '')[:1000]}\n\n"
+            "Format your response using clear Markdown headers (##), bold text for file names, and "
+            "code blocks (```) for ALL terminal commands. Be direct, technically precise, and bored."
+        )
+
     def scan(self, target_repo: str = None):
         print(f"[Bored Scout]: Target acquired -> {target_repo or 'Watchlist'}")
         sys.stdout.flush()
         all_results = []
-        # If target_repo is a full URL, extract the full_name
+        
         if target_repo and target_repo.startswith("http"):
             target_repo = target_repo.replace("https://github.com/", "").replace(".git", "").strip("/")
             
@@ -148,10 +153,8 @@ class SurgicalScoutV3:
             issues = self.fetch_issues(repo)
             
             for issue in issues:
-                if "pull_request" in issue:
-                    continue
-                if issue.get("comments", 0) > self.scout_settings.get("max_comments", 15):
-                    continue
+                if "pull_request" in issue: continue
+                if issue.get("comments", 0) > self.scout_settings.get("max_comments", 15): continue
                 
                 delta_score = self.calculate_delta_score(issue)
                 category = self.categorize(issue)
@@ -166,44 +169,25 @@ class SurgicalScoutV3:
                     "category": category
                 })
         
-        # Rank by Delta Score
         all_results.sort(key=lambda x: x["delta_score"], reverse=True)
-        
-        # Take Top 3 (Quality over Quantity)
         top_3 = all_results[:3]
         
-        # Doc-Sourcing Skill (Phase 3)
         self.ingest_docs(top_3)
         
-        # Eager Strategy Generation
         from core.llm import LlmClient
         llm = LlmClient()
         
         print(f"Node Sync: Generating fix blueprints for {len(top_3)} candidates...")
         sys.stdout.flush()
-        # Focus on top 3 highest-priority surgical candidates
-        persona_note = "Identify the absolute top 3 highest-priority, surgical-fix candidates. Quality over quantity. Focus on candidates fixable with a few files."
         
         for target in top_3:
-            strategy_prompt = (
-                f"{persona_note}\n\n"
-                f"Propose a concise, surgical fix strategy for this GitHub issue.\n"
-                f"Repo: {target['repo']}\n"
-                f"Title: {target['title']}\n"
-                f"Body: {target['body'][:1000]}\n\n"
-                "Format your response using clear Markdown headers (##), bold text for file names, and "
-                "code blocks (```) for ALL terminal commands. Be direct, technically precise, and bored."
-            )
             try:
-                target["strategy"] = llm.generate(strategy_prompt)
+                target["strategy"] = llm.generate(self._get_strategy_prompt(target))
             except Exception as e:
                 print(f"[Bored Scout]: LLM Strategy failure for {target['title']}: {e}")
                 sys.stdout.flush()
                 target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
             
-            # Keep body for Data Fidelity in Phase 3
-            # del target["body"]
-
         report = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "total_scanned": len(all_results),
@@ -221,6 +205,56 @@ class SurgicalScoutV3:
         print(f"Scan complete. {len(top_3)} blueprints ready at {report_path}")
         sys.stdout.flush()
         return top_3
+
+    def refine_blueprints(self):
+        """Re-triggers LLM strategy generation for failed targets in the last report."""
+        report_path = self.scout_settings.get("report_path", "logs/scout_report.json")
+        if not os.path.exists(report_path):
+            print(f"[Bored Scout]: Refinement failed. No report found at {report_path}")
+            sys.stdout.flush()
+            return
+            
+        with open(report_path, "r") as f:
+            data = json.load(f)
+            
+        top_targets = data.get("top_targets", [])
+        failure_keywords = ["offline", "retry", "limit", "failed"]
+        refined_count = 0
+        
+        from core.llm import LlmClient
+        llm = LlmClient()
+        
+        print(f"[Bored Scout]: Blueprint Refinement active. Checking for failures...")
+        sys.stdout.flush()
+        
+        for target in top_targets:
+            strategy = (target.get("strategy") or "").lower()
+            needs_refinement = any(kw in strategy for kw in failure_keywords)
+            
+            if needs_refinement:
+                print(f"  Refining blueprint for: {target['title']}...")
+                sys.stdout.flush()
+                try:
+                    target["strategy"] = llm.generate(self._get_strategy_prompt(target))
+                    refined_count += 1
+                except Exception as e:
+                    print(f"  Refinement failed for {target['title']}: {e}")
+                    sys.stdout.flush()
+            else:
+                print(f"  Skipping valid strategy for: {target['title']}")
+                sys.stdout.flush()
+                    
+        if refined_count > 0:
+            data["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            with open(report_path, "w") as f:
+                json.dump(data, f, indent=2)
+            print(f"Refinement complete. {refined_count} blueprints updated.")
+            sys.stdout.flush()
+        else:
+            print("No blueprints required refinement.")
+            sys.stdout.flush()
+            
+        return data
 
 if __name__ == "__main__":
     import argparse
