@@ -19,6 +19,7 @@ class SurgicalScoutV3:
         self.github_pat = os.getenv("GITHUB_KEY")
         if not self.github_pat:
             print("Warning: GITHUB_KEY not found in environment. Rate limits will be very tight.")
+            sys.stdout.flush()
 
         self.registry_path = "core/registry.json"
         self.watchlist = self.load_watchlist()
@@ -41,6 +42,7 @@ class SurgicalScoutV3:
                     return [repo["full_name"] for repo in data.get("repos", [])]
             except Exception as e:
                 print(f"Error loading registry: {e}")
+                sys.stdout.flush()
         return self.config.get("repo_watchlist", [])
 
     def check_rate_limit(self, response: requests.Response):
@@ -48,6 +50,7 @@ class SurgicalScoutV3:
         if remaining < self.scout_settings.get("stealth_threshold", 100):
             sleep_time = self.scout_settings.get("sleep_seconds", 60)
             print(f"Stealth Protocol: Rate limit low ({remaining}). Sleeping for {sleep_time}s...")
+            sys.stdout.flush()
             time.sleep(sleep_time)
 
     def fetch_issues(self, repo: str) -> List[Dict[Any, Any]]:
@@ -73,6 +76,7 @@ class SurgicalScoutV3:
             return filtered
         else:
             print(f"Error fetching issues for {repo}: {response.status_code}")
+            sys.stdout.flush()
             return []
 
     def calculate_delta_score(self, issue: Dict[Any, Any]) -> int:
@@ -109,6 +113,7 @@ class SurgicalScoutV3:
     def ingest_docs(self, targets: List[Dict]):
         """Finds and ingests relevant coding documentation for top targets."""
         print(f"[Bored Scout]: Doc-Sourcing active. Searching for technical context...")
+        sys.stdout.flush()
         from core.llm import LlmClient
         llm = LlmClient()
         
@@ -123,11 +128,13 @@ class SurgicalScoutV3:
             # For now, I'll add a placeholder that instructs the agent to search if needed.
             target["doc_query"] = query
             print(f"  Target: {target['title']} -> Query: {query}")
+            sys.stdout.flush()
 
         return targets
 
     def scan(self, target_repo: str = None):
         print(f"[Bored Scout]: Target acquired -> {target_repo or 'Watchlist'}")
+        sys.stdout.flush()
         all_results = []
         # If target_repo is a full URL, extract the full_name
         if target_repo and target_repo.startswith("http"):
@@ -137,6 +144,7 @@ class SurgicalScoutV3:
         
         for repo in repos_to_scan:
             print(f"Scouting {repo}...")
+            sys.stdout.flush()
             issues = self.fetch_issues(repo)
             
             for issue in issues:
@@ -172,6 +180,7 @@ class SurgicalScoutV3:
         llm = LlmClient()
         
         print(f"Node Sync: Generating fix blueprints for {len(top_3)} candidates...")
+        sys.stdout.flush()
         # Focus on top 3 highest-priority surgical candidates
         persona_note = "Identify the absolute top 3 highest-priority, surgical-fix candidates. Quality over quantity. Focus on candidates fixable with a few files."
         
@@ -189,6 +198,7 @@ class SurgicalScoutV3:
                 target["strategy"] = llm.generate(strategy_prompt)
             except Exception as e:
                 print(f"[Bored Scout]: LLM Strategy failure for {target['title']}: {e}")
+                sys.stdout.flush()
                 target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
             
             # Keep body for Data Fidelity in Phase 3
@@ -209,6 +219,7 @@ class SurgicalScoutV3:
         
         print(f"\n[Bored Scout]: {casual_summary}")
         print(f"Scan complete. {len(top_3)} blueprints ready at {report_path}")
+        sys.stdout.flush()
         return top_3
 
 if __name__ == "__main__":

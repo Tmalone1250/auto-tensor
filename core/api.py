@@ -6,9 +6,11 @@ import time
 import sys
 import subprocess
 import json
+import traceback
+import contextlib
 from datetime import datetime
 from typing import Optional, List, Dict
-from fastapi import FastAPI, Body, HTTPException
+from fastapi import FastAPI, Body, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -19,6 +21,7 @@ print(f"DEBUG: GitHub Token Loaded. Starts with: {GITHUB_KEY[:4] if GITHUB_KEY e
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.health_check import check_rate_limit
 from core.skill_writer import record_mission_success
+from agents.scout import SurgicalScoutV3
 
 app = FastAPI(title="Auto-Tensor Command Bridge")
 
@@ -136,6 +139,29 @@ class ProcessManager:
 # Global Process Manager
 pm = ProcessManager()
 
+def run_scout_sync(url: str):
+    """Refactored Scout Orchestrator: Direct import with real-time log redirection."""
+    log_path = os.path.join("logs", "scout.log")
+    os.makedirs("logs", exist_ok=True)
+    
+    try:
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            with contextlib.redirect_stdout(log_file), contextlib.redirect_stderr(log_file):
+                print(f"\n--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: STARTING SURGICAL SCOUT V3 ---")
+                print(f"Target: {url}")
+                sys.stdout.flush()
+                
+                scout = SurgicalScoutV3(config_path="config.yaml")
+                scout.scan(target_repo=url)
+                
+                print(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: MISSION COMPLETE ---")
+                sys.stdout.flush()
+    except Exception:
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(f"\n[CRITICAL ERROR] Scout crash detected:\n")
+            traceback.print_exc(file=log_file)
+            log_file.flush()
+
 # --- CORS ---
 # --- CORS Hardening for Hybrid Deployment ---
 app.add_middleware(
@@ -224,14 +250,14 @@ def add_repo(request: RepoRequest):
     return {"status": "added", "repo": new_repo}
 
 @app.post("/repo/scan")
-def scan_repository(request: RepoRequest):
+def scan_repository(request: RepoRequest, background_tasks: BackgroundTasks):
     """Triggers the Scout agent on a specific repository URL."""
     url = request.url.strip()
     if not url.startswith("https://github.com/"):
         raise HTTPException(status_code=400, detail="Invalid GitHub URL")
         
-    # We pass the URL as the target to the scout
-    return pm.run_agent("scout", target=url)
+    background_tasks.add_task(run_scout_sync, url)
+    return {"status": "started", "agent": "scout", "target": url}
 
 # --- Approvals Workflow ---
 @app.get("/approvals")
@@ -268,6 +294,8 @@ def get_audit():
 def get_logs(agent: Optional[str] = None):
     """Returns the last 50 lines of the workflow log, optionally filtered by agent."""
     log_path = os.path.join("logs", "workflow.log")
+    if agent == "scout":
+        log_path = os.path.join("logs", "scout.log")
     
     if not os.path.exists(log_path):
         os.makedirs("logs", exist_ok=True)
