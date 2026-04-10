@@ -200,6 +200,11 @@ class SurgicalScoutV3:
         
         try:
             raw_response = llm.generate(self._get_batch_prompt(top_n))
+            
+            # Parse Protection: Catch LLM Error strings before cleanup
+            if raw_response.startswith("LLM Error"):
+                raise Exception(raw_response)
+                
             # Clean potential Markdown wrapping
             clean_json = raw_response.strip().strip("```json").strip("```").strip()
             batch_data = json.loads(clean_json)
@@ -273,6 +278,11 @@ class SurgicalScoutV3:
         
         try:
             raw_response = llm.generate(self._get_batch_prompt(targets_to_refine))
+            
+            # Parse Protection: Catch LLM Error strings before cleanup
+            if raw_response.startswith("LLM Error"):
+                raise Exception(raw_response)
+
             clean_json = raw_response.strip().strip("```json").strip("```").strip()
             batch_data = json.loads(clean_json)
             results_map = {res["id"]: res for res in batch_data.get("results", [])}

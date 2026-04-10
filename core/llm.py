@@ -46,6 +46,16 @@ class LlmClient:
         print(f"[LLM Governor]: {msg}")
         sys.stdout.flush()
 
+    def _log_raw_response(self, text: str):
+        """Archives raw API responses for forensic debugging."""
+        os.makedirs("logs", exist_ok=True)
+        raw_log = os.path.join("logs", "raw_responses.log")
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(raw_log, "a", encoding="utf-8") as f:
+            f.write(f"\n--- [{timestamp}] Key[{self.current_key_index}] ---\n")
+            f.write(text)
+            f.write("\n---\n")
+
     def _get_next_key(self) -> bool:
         """Cycles to the next key in the pool. Returns False if no keys available."""
         if len(self.api_keys) <= 1:
@@ -144,25 +154,27 @@ class LlmClient:
                         print(f"[Bored Operator]: JSON Syntax error in 200 OK response: {e}")
                         return "LLM Error: Received invalid JSON structure from API."
                 
-                elif response.status_code == 503 or response.status_code == 429:
-                    # Model Overload or Rate Limit: Attempt Key Rotation First
+                elif response.status_code == 503:
+                    # Service Unavailable: Log for forensics + Rotate + Mandatory 30s Cool
+                    self._log_raw_response(response.text)
+                    print(f"  [LLM] 503 HTML detected. Archiving response and rotating...")
+                    
+                    rotated = self._get_next_key()
+                    delay = 30
+                    print(f"[Bored Operator]: Model 503. {'Key rotated. ' if rotated else ''}Cooling down for {delay}s...")
+                    time.sleep(delay)
+                    continue
+                
+                elif response.status_code == 429:
+                    # Rate Limit: Cooling down
                     if self._get_next_key():
-                        # Immediate retry with new key (decrement retry count if we want but user said "Immediately retry")
-                        # Actually, counting this as a retry is safer to avoid infinite loops
-                        print(f"  [LLM] Immediate failover initiated. Attempt {attempt+1}/{max_retries}...")
+                        print(f"  [LLM] 429 Failover initiated. Attempt {attempt+1}/{max_retries}...")
                         sys.stdout.flush()
                         continue
-                    
-                    # No rotation possible (only 1 key), fall back to original logic
-                    if response.status_code == 503:
-                        if attempt >= 2:
-                            current_model = "gemini-1.5-pro"
-                        delay = min(30, (2 ** (attempt + 1)) + random.uniform(-0.5, 0.5))
-                        print(f"[Bored Operator]: Model 503. Retrying in {delay:.1f}s...")
-                    else: # 429
-                        delay = 15 if attempt == 0 else min(60, (4 ** (attempt + 1)) + random.uniform(-1, 1))
-                        print(f"[Bored Operator]: Rate limit hit (429). Cooling down for {delay:.1f}s...")
-                    
+
+                    # Mandatory 15s wait on first retry, then exponential
+                    delay = 15 if attempt == 0 else min(60, (4 ** (attempt + 1)) + random.uniform(-1, 1))
+                    print(f"[Bored Operator]: Rate limit hit (429). Cooling down for {delay:.1f}s...")
                     time.sleep(max(0, delay))
                     continue
                 
