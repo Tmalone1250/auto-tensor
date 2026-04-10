@@ -13,7 +13,18 @@ except ImportError:
 
 class LlmClient:
     def __init__(self, api_key=None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        # Multi-key loading from GEMINI_KEYS (comma-separated pool)
+        raw_keys = os.getenv("GEMINI_KEYS", os.getenv("GEMINI_API_KEY", ""))
+        self.api_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+        
+        # Override with single key if provided directly
+        if api_key:
+            self.api_keys = [api_key]
+            
+        self.current_key_index = 0
+        self.api_key = self.api_keys[0] if self.api_keys else None
+        self.governor_log = os.path.join("logs", "governor.log")
+        
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
         self.system_prompt = """
         You are a senior systems engineer and a 'Bored Contributor'. 
@@ -26,6 +37,25 @@ class LlmClient:
         """
         self.ai_rules_path = ".ai-rules"
         self.skills_path = "SKILLS.md"
+
+    def _log_rotation(self, msg: str):
+        os.makedirs("logs", exist_ok=True)
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(self.governor_log, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] [GOVERNOR] {msg}\n")
+        print(f"[LLM Governor]: {msg}")
+        sys.stdout.flush()
+
+    def _get_next_key(self) -> bool:
+        """Cycles to the next key in the pool. Returns False if no keys available."""
+        if len(self.api_keys) <= 1:
+            return False
+            
+        old_index = self.current_key_index
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        self.api_key = self.api_keys[self.current_key_index]
+        self._log_rotation(f"Key {old_index} exhausted/overloaded. Rotating to Key {self.current_key_index}...")
+        return True
 
     def _get_local_context(self) -> str:
         """Reads .ai-rules for persistent project constraints."""
@@ -95,7 +125,12 @@ class LlmClient:
         current_model = "gemini-3-flash-preview"
         max_retries = 5
         
+        import sys
+        
         for attempt in range(max_retries):
+            if not self.api_key:
+                return "LLM Error: No API keys loaded in pool."
+                
             url = f"{self.base_url}/models/{current_model}:generateContent?key={self.api_key}"
             
             try:
@@ -109,26 +144,25 @@ class LlmClient:
                         print(f"[Bored Operator]: JSON Syntax error in 200 OK response: {e}")
                         return "LLM Error: Received invalid JSON structure from API."
                 
-                elif response.status_code == 503:
-                    # Model Fallback: after 2 retries (3rd fail), switch 'lanes'
-                    if attempt >= 2:
-                        current_model = "gemini-1.5-pro"
+                elif response.status_code == 503 or response.status_code == 429:
+                    # Model Overload or Rate Limit: Attempt Key Rotation First
+                    if self._get_next_key():
+                        # Immediate retry with new key (decrement retry count if we want but user said "Immediately retry")
+                        # Actually, counting this as a retry is safer to avoid infinite loops
+                        print(f"  [LLM] Immediate failover initiated. Attempt {attempt+1}/{max_retries}...")
+                        sys.stdout.flush()
+                        continue
                     
-                    # Exponential Backoff with Jitter: max 30s
-                    delay = min(30, (2 ** (attempt + 1)) + random.uniform(-0.5, 0.5))
-                    print(f"[Bored Operator]: Model 503. Retrying in {delay:.1f}s (Attempt {attempt+1}/{max_retries})...")
-                    time.sleep(max(0, delay))
-                    continue
-                
-                elif response.status_code == 429:
-                    # Rate Limit: Cooling down
-                    # Mandatory 15s wait on first retry, then exponential
-                    if attempt == 0:
-                        delay = 15
-                    else:
-                        delay = min(60, (4 ** (attempt + 1)) + random.uniform(-1, 1))
-                        
-                    print(f"[Bored Operator]: Rate limit hit (429). Cooling down for {delay:.1f}s (Attempt {attempt+1}/{max_retries})...")
+                    # No rotation possible (only 1 key), fall back to original logic
+                    if response.status_code == 503:
+                        if attempt >= 2:
+                            current_model = "gemini-1.5-pro"
+                        delay = min(30, (2 ** (attempt + 1)) + random.uniform(-0.5, 0.5))
+                        print(f"[Bored Operator]: Model 503. Retrying in {delay:.1f}s...")
+                    else: # 429
+                        delay = 15 if attempt == 0 else min(60, (4 ** (attempt + 1)) + random.uniform(-1, 1))
+                        print(f"[Bored Operator]: Rate limit hit (429). Cooling down for {delay:.1f}s...")
+                    
                     time.sleep(max(0, delay))
                     continue
                 
@@ -147,7 +181,10 @@ class LlmClient:
                         return f"LLM Error [{response.status_code}]: Connection Overload / HTML Response".replace("\n", " ")
             
             except Exception as e:
-                # Connection / Timeout error
+                # Connection / Timeout error: Also attempt rotation
+                if self._get_next_key():
+                    continue
+                    
                 delay = (2 ** attempt) + random.uniform(-0.5, 0.5)
                 print(f"[Bored Scout]: Connection Error. Retrying in {delay:.1f}s... ({str(e)})")
                 time.sleep(max(0, delay))
