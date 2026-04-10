@@ -129,7 +129,7 @@ class SurgicalScoutV3:
         persona_note = "Identify the absolute top highest-priority, surgical-fix candidates. Quality over quantity."
         issues_text = ""
         for t in targets:
-            issues_text += f"---\nID: {t['id']}\nRepo: {t['repo']}\nTitle: {t['title']}\nBody: {t.get('body', '')[:800]}\n"
+            issues_text += f"---\nID: {t['id']}\nRepo: {t['repo']}\nTitle: {t['title']}\nBody: {t.get('body', '')[:600]}\n"
         
         return (
             f"{persona_note}\n\n"
@@ -173,28 +173,39 @@ class SurgicalScoutV3:
                     "category": category
                 })
         
+        # Rank by Delta Score
         all_results.sort(key=lambda x: x["delta_score"], reverse=True)
-        top_3 = all_results[:3]
         
-        self.ingest_docs(top_3)
+        # Heavyweight Batch Throttling: Reduce batch size if repo is high-density
+        heavyweight_keywords = ["transformers", "tensorflow", "pytorch", "langchain", "next.js"]
+        is_heavyweight = any(kw in (target_repo or "").lower() for kw in heavyweight_keywords)
+        
+        batch_limit = 1 if is_heavyweight else 3
+        if is_heavyweight:
+            print(f"[Bored Scout]: Heavyweight repo detected. Throttling batch size to {batch_limit} for stability.")
+            sys.stdout.flush()
+            
+        top_n = all_results[:batch_limit]
+        
+        self.ingest_docs(top_n)
         
         from core.llm import LlmClient
         llm = LlmClient()
         
-        print(f"Node Sync: Generating fix blueprints for {len(top_3)} candidates...")
+        print(f"Node Sync: Generating fix blueprints for {len(top_n)} candidates...")
         sys.stdout.flush()
         
-        print(f"[Bored Scout]: Analyzing Batch ({len(top_3)} targets)...")
+        print(f"[Bored Scout]: Analyzing Batch ({len(top_n)} targets)...")
         sys.stdout.flush()
         
         try:
-            raw_response = llm.generate(self._get_batch_prompt(top_3))
+            raw_response = llm.generate(self._get_batch_prompt(top_n))
             # Clean potential Markdown wrapping
             clean_json = raw_response.strip().strip("```json").strip("```").strip()
             batch_data = json.loads(clean_json)
             results_map = {res["id"]: res for res in batch_data.get("results", [])}
             
-            for target in top_3:
+            for target in top_n:
                 res = results_map.get(target["id"])
                 if res:
                     target["strategy"] = res.get("strategy", "No strategy generated.")
@@ -205,26 +216,26 @@ class SurgicalScoutV3:
         except Exception as e:
             print(f"[Bored Scout]: Batch Analysis failure: {e}")
             sys.stdout.flush()
-            for target in top_3:
+            for target in top_n:
                 target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
             
         report = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "total_scanned": len(all_results),
-            "top_targets": top_3
+            "top_targets": top_n
         }
         
         report_path = self.scout_settings.get("report_path", "logs/scout_report.json")
         with open(report_path, "w") as f:
             json.dump(report, f, indent=2)
             
-        summary_prompt = f"Summarize these scan results for {len(all_results)} issues. Mention the top target: {top_3[0]['title'] if top_3 else 'None'}. Be casual and bored."
+        summary_prompt = f"Summarize these scan results for {len(all_results)} issues. Mention the top target: {top_n[0]['title'] if top_n else 'None'}. Be casual and bored."
         casual_summary = llm.generate(summary_prompt)
         
         print(f"\n[Bored Scout]: {casual_summary}")
-        print(f"Scan complete. {len(top_3)} blueprints ready at {report_path}")
+        print(f"Scan complete. {len(top_n)} blueprints ready at {report_path}")
         sys.stdout.flush()
-        return top_3
+        return top_n
 
     def refine_blueprints(self):
         """Re-triggers LLM strategy generation for failed targets in the last report using Batching."""

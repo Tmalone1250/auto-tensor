@@ -99,11 +99,15 @@ class LlmClient:
             url = f"{self.base_url}/models/{current_model}:generateContent?key={self.api_key}"
             
             try:
-                response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+                response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=60)
                 
                 if response.status_code == 200:
-                    result = response.json()
-                    return result['candidates'][0]['content']['parts'][0]['text']
+                    try:
+                        result = response.json()
+                        return result['candidates'][0]['content']['parts'][0]['text']
+                    except (json.JSONDecodeError, KeyError, IndexError) as e:
+                        print(f"[Bored Operator]: JSON Syntax error in 200 OK response: {e}")
+                        return "LLM Error: Received invalid JSON structure from API."
                 
                 elif response.status_code == 503:
                     # Model Fallback: after 2 retries (3rd fail), switch 'lanes'
@@ -129,13 +133,18 @@ class LlmClient:
                     continue
                 
                 else:
-                    # Permanent errors
+                    # Permanent errors (HTML or direct JSON)
+                    print(f"[Bored Operator]: API Error status {response.status_code}")
                     try:
-                        err_json = response.json()
-                        err_msg = err_json.get("error", {}).get("message", response.text)
+                        # Attempt to parse error as JSON, fallback to text
+                        if "application/json" in response.headers.get("Content-Type", ""):
+                            err_json = response.json()
+                            err_msg = err_json.get("error", {}).get("message", response.text)
+                        else:
+                            err_msg = "API_OVERLOAD (HTML Error Page)"
                         return f"LLM Error [{response.status_code}]: {err_msg}".replace("\n", " ")
-                    except:
-                        return f"LLM Error [{response.status_code}]: {response.text.strip()}".replace("\n", " ")
+                    except Exception:
+                        return f"LLM Error [{response.status_code}]: Connection Overload / HTML Response".replace("\n", " ")
             
             except Exception as e:
                 # Connection / Timeout error
