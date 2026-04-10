@@ -2,7 +2,7 @@
   
 <img src="./ui/public/auto-tensor.png" width="160" height="160" alt="Auto-Tensor Logo" />
 
-# ⚡ Auto-Tensor v2.1
+# ⚡ Auto-Tensor
 
 ### The Network Operations Center
 
@@ -62,7 +62,7 @@ graph LR
 
 ## 📸 Screenshots
 
-### Network Operations Center Console (v2.1)
+### Network Operations Center Console
 
 ![Auto-Tensor Dashboard](./ui/public/auto-tensor_screenshot.png)
 
