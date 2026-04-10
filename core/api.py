@@ -8,14 +8,19 @@ import subprocess
 import json
 import traceback
 import contextlib
+import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict
-from fastapi import FastAPI, Body, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from core.terminal import PtyManager
 
 GITHUB_KEY = os.getenv("GITHUB_KEY")
 print(f"DEBUG: GitHub Token Loaded. Starts with: {GITHUB_KEY[:4] if GITHUB_KEY else 'NONE'}")
+
+# Terminal shell secret — validated on WebSocket handshake
+TERMINAL_SECRET = os.getenv("TERMINAL_SECRET", "")
 
 # --- Global State Manager ---
 SYSTEM_STATE = {
@@ -520,6 +525,85 @@ def ignore_issue(req: IgnoreRequest = Body(...)):
         return {"status": "success", "remaining": len(data["top_targets"])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ---------------------------------------------------------------------------
+# WebSocket Terminal — Direct Shell Web-CLI
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/terminal")
+async def terminal_ws(websocket: WebSocket, token: str = Query(default="")):
+    """
+    Real-time bash terminal over WebSocket.
+
+    Security: validates ?token= against TERMINAL_SECRET env var.
+    Protocol:
+      - Server → Client: raw bytes (PTY output)
+      - Client → Server: raw bytes (keystrokes) OR JSON {type:"resize",cols:N,rows:M}
+    """
+    # --- Auth gate ---
+    if not TERMINAL_SECRET or token != TERMINAL_SECRET:
+        await websocket.close(code=4401)  # 4401 = Unauthorized (custom)
+        return
+
+    await websocket.accept()
+
+    pty = PtyManager()
+    try:
+        pty.spawn()
+    except Exception as e:
+        await websocket.send_text(f"\r\n[AUTO-TENSOR] Failed to spawn shell: {e}\r\n")
+        await websocket.close()
+        return
+
+    loop = asyncio.get_event_loop()
+
+    async def _pty_reader():
+        """Background task: read PTY output and forward to WebSocket."""
+        while pty.active:
+            try:
+                data = await loop.run_in_executor(None, pty.read, 4096)
+                if data:
+                    await websocket.send_bytes(data)
+                else:
+                    # PTY closed (bash exited)
+                    break
+            except Exception:
+                break
+        pty.kill()
+
+    reader_task = asyncio.create_task(_pty_reader())
+
+    try:
+        while True:
+            message = await websocket.receive()
+
+            # WebSocket can send text (resize JSON) or bytes (keystrokes)
+            if "bytes" in message and message["bytes"]:
+                pty.write(message["bytes"])
+
+            elif "text" in message and message["text"]:
+                raw = message["text"]
+                try:
+                    payload = json.loads(raw)
+                    if payload.get("type") == "resize":
+                        rows = int(payload.get("rows", 24))
+                        cols = int(payload.get("cols", 80))
+                        pty.resize(rows, cols)
+                    else:
+                        # Treat unrecognised JSON as raw input
+                        pty.write(raw.encode())
+                except (json.JSONDecodeError, ValueError):
+                    # Plain text keystroke
+                    pty.write(raw.encode())
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        reader_task.cancel()
+        pty.kill()
+
 
 if __name__ == "__main__":
     import uvicorn

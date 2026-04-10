@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   BrainCircuit,
   Terminal,
+  TerminalSquare,
   Zap
 } from 'lucide-react';
 
@@ -20,6 +21,7 @@ const Sidebar: React.FC = () => {
     { id: 'intelligence', label: 'Intelligence', icon: BrainCircuit, path: '/intelligence' },
     { id: 'engineering', label: 'Engineering', icon: Terminal, path: '/engineering' },
     { id: 'quality', label: 'Quality', icon: ClipboardCheck, path: '/quality' },
+    { id: 'terminal', label: 'Shell', icon: TerminalSquare, path: '/terminal' },
   ];
 
   const toggleSidebar = () => setIsOpen(!isOpen);

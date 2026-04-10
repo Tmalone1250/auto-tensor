@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import Intelligence from './pages/Intelligence';
 import Engineering from './pages/Engineering';
 import Quality from './pages/Quality';
+import TerminalPage from './pages/Terminal';
 import { 
   ShieldCheck, 
   Clock, 
@@ -120,6 +121,7 @@ function App() {
               <Route path="/intelligence" element={<Intelligence />} />
               <Route path="/engineering" element={<Engineering />} />
               <Route path="/quality" element={<Quality />} />
+              <Route path="/terminal" element={<TerminalPage />} />
             </Routes>
           </div>
         </div>
