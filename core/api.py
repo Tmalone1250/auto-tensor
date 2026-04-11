@@ -15,6 +15,7 @@ from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, WebSocket, We
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from core.terminal import PtyManager
+from core.terminal_manager import terminal_manager
 
 GITHUB_KEY = os.getenv("GITHUB_KEY")
 print(f"DEBUG: GitHub Token Loaded. Starts with: {GITHUB_KEY[:4] if GITHUB_KEY else 'NONE'}")
@@ -37,6 +38,10 @@ from core.skill_writer import record_mission_success
 from agents.scout import SurgicalScoutV3
 
 app = FastAPI(title="Auto-Tensor Command Bridge")
+
+@app.on_event("startup")
+async def startup_event():
+    await terminal_manager.start_gc()
 
 # --- Models ---
 class AgentRequest(BaseModel):
@@ -531,56 +536,32 @@ def ignore_issue(req: IgnoreRequest = Body(...)):
 # ---------------------------------------------------------------------------
 
 @app.websocket("/ws/terminal")
-async def terminal_ws(websocket: WebSocket, token: str = Query(default="")):
+async def terminal_ws(
+    websocket: WebSocket, 
+    token: str = Query(default=""),
+    session_id: str = Query(default="trevor-main")
+):
     """
-    Real-time bash terminal over WebSocket.
-
-    Security: validates ?token= against TERMINAL_SECRET env var.
-    Protocol:
-      - Server → Client: raw bytes (PTY output)
-      - Client → Server: raw bytes (keystrokes) OR JSON {type:"resize",cols:N,rows:M}
+    Real-time bash terminal over WebSocket with session persistence.
     """
-    # --- Auth gate ---
     if not TERMINAL_SECRET or token != TERMINAL_SECRET:
-        await websocket.close(code=4401)  # 4401 = Unauthorized (custom)
+        await websocket.close(code=4401)
         return
 
     await websocket.accept()
 
-    pty = PtyManager()
     try:
-        pty.spawn()
-    except Exception as e:
-        await websocket.send_text(f"\r\n[AUTO-TENSOR] Failed to spawn shell: {e}\r\n")
-        await websocket.close()
-        return
-
-    loop = asyncio.get_event_loop()
-
-    async def _pty_reader():
-        """Background task: read PTY output and forward to WebSocket."""
-        while pty.active:
-            try:
-                data = await loop.run_in_executor(None, pty.read, 4096)
-                if data:
-                    await websocket.send_bytes(data)
-                else:
-                    # PTY closed (bash exited)
-                    break
-            except Exception:
-                break
-        pty.kill()
-
-    reader_task = asyncio.create_task(_pty_reader())
-
-    try:
+        session = await terminal_manager.get_or_create(session_id)
+        session.active_clients.add(websocket)
+        
+        # Replay buffer to the newly connected client
+        for chunk in session.output_buffer:
+            await websocket.send_bytes(chunk)
+            
         while True:
             message = await websocket.receive()
-
-            # WebSocket can send text (resize JSON) or bytes (keystrokes)
             if "bytes" in message and message["bytes"]:
-                pty.write(message["bytes"])
-
+                session.pty.write(message["bytes"])
             elif "text" in message and message["text"]:
                 raw = message["text"]
                 try:
@@ -588,21 +569,35 @@ async def terminal_ws(websocket: WebSocket, token: str = Query(default="")):
                     if payload.get("type") == "resize":
                         rows = int(payload.get("rows", 24))
                         cols = int(payload.get("cols", 80))
-                        pty.resize(rows, cols)
+                        session.pty.resize(rows, cols)
+                    elif payload.get("type") == "clear_buffer":
+                        session.clear_buffer()
                     else:
-                        # Treat unrecognised JSON as raw input
-                        pty.write(raw.encode())
+                        session.pty.write(raw.encode())
                 except (json.JSONDecodeError, ValueError):
-                    # Plain text keystroke
-                    pty.write(raw.encode())
+                    session.pty.write(raw.encode())
 
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Terminal WS Error: {e}")
     finally:
-        reader_task.cancel()
-        pty.kill()
+        if 'session' in locals():
+            session.active_clients.discard(websocket)
+            session.last_client_at = time.time()
+
+@app.post("/terminal/session/{session_id}/clear-buffer")
+async def clear_terminal_buffer(session_id: str, token: str = Query(default="")):
+    """Flushes the backend output buffer for a specific session."""
+    if not TERMINAL_SECRET or token != TERMINAL_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    session = terminal_manager.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    session.clear_buffer()
+    return {"status": "success", "session_id": session_id}
 
 
 if __name__ == "__main__":

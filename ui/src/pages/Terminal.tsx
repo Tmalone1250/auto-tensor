@@ -1,40 +1,20 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { Lock, Unlock, TerminalSquare, Wifi, WifiOff } from 'lucide-react';
+import { Lock, Unlock, TerminalSquare, Wifi, WifiOff, Trash2, RefreshCw } from 'lucide-react';
+import { useTerminal, ConnState } from '../context/TerminalContext';
 import '@xterm/xterm/css/xterm.css';
-
-// Derive ws:// or wss:// from the VITE_API_URL env var
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const TERMINAL_SECRET = import.meta.env.VITE_TERMINAL_SECRET || '';
-
-function buildWsUrl(): string {
-  const wsBase = API_BASE.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
-  return `${wsBase}/ws/terminal?token=${encodeURIComponent(TERMINAL_SECRET)}`;
-}
-
-type ConnState = 'connecting' | 'connected' | 'disconnected' | 'auth_error';
 
 export default function TerminalPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  const [connState, setConnState] = useState<ConnState>('connecting');
+  const { connState, attachTerminal, sendResize, clearBuffer, reconnect } = useTerminal();
   const [locked, setLocked] = useState(false);
 
-  // --- Send resize dimensions to backend ---
-  const sendResize = useCallback((term: Terminal) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })
-      );
-    }
-  }, []);
-
-  // --- Bootstrap xterm + WebSocket ---
+  // --- Bootstrap xterm ---
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -67,64 +47,26 @@ export default function TerminalPage() {
         brightWhite: '#f8fafc',
         selectionBackground: '#10b98133',
       },
+      scrollback: 5000,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(containerRef.current);
-    fitAddon.fit();
-    term.focus();
-
+    
     termRef.current = term;
     fitRef.current = fitAddon;
 
-    // --- WebSocket connection ---
-    const ws = new WebSocket(buildWsUrl());
-    ws.binaryType = 'arraybuffer';
-    wsRef.current = ws;
+    // Attach to global context
+    const detach = attachTerminal(containerRef.current, term);
+    
+    // Initial focus
+    term.focus();
 
-    ws.onopen = () => {
-      setConnState('connected');
-      // Tell the backend the initial terminal size
-      sendResize(term);
-    };
-
-    ws.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) {
-        // Binary frame: PTY output
-        const decoder = new TextDecoder();
-        term.write(decoder.decode(event.data));
-      } else if (typeof event.data === 'string') {
-        term.write(event.data);
-      }
-    };
-
-    ws.onclose = (event) => {
-      if (event.code === 4401) {
-        setConnState('auth_error');
-        term.write('\r\n\x1b[31m[AUTO-TENSOR] Authentication failed. Check VITE_TERMINAL_SECRET.\x1b[0m\r\n');
-      } else {
-        setConnState('disconnected');
-        term.write('\r\n\x1b[33m[AUTO-TENSOR] Connection closed. Refresh to reconnect.\x1b[0m\r\n');
-      }
-    };
-
-    ws.onerror = () => {
-      setConnState('disconnected');
-    };
-
-    // Send keystrokes from xterm to WebSocket
-    const dataDisposable = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(new TextEncoder().encode(data));
-      }
-    });
-
-    // --- ResizeObserver: keep terminal sized to its container ---
+    // --- ResizeObserver ---
     const observer = new ResizeObserver(() => {
       try {
         fitAddon.fit();
-        sendResize(term);
+        sendResize(term.cols, term.rows);
       } catch {
         // Ignore fit errors during teardown
       }
@@ -133,15 +75,13 @@ export default function TerminalPage() {
     resizeObserverRef.current = observer;
 
     return () => {
-      dataDisposable.dispose();
+      detach();
       observer.disconnect();
-      ws.close();
       term.dispose();
-      wsRef.current = null;
       termRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachTerminal]);
 
   // --- Terminal Lock: toggle stdin ---
   useEffect(() => {
@@ -166,36 +106,58 @@ export default function TerminalPage() {
         <div className="flex items-center gap-3">
           <TerminalSquare size={16} className="text-brand-success" />
           <span className="text-xs font-black uppercase tracking-widest text-slate-300">Direct Shell</span>
-          <span className="text-slate-600 text-xs">/bin/bash → ~/auto-tensor/workspace</span>
+          <span className="text-slate-600 text-xs hidden sm:inline">Persisted @ trevor-main</span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Connection badge */}
           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest ${status.color}`}>
             {status.icon}
             {status.label}
           </div>
 
-          {/* Terminal Lock toggle */}
-          <button
-            id="terminal-lock-toggle"
-            onClick={() => setLocked((l) => !l)}
-            title={locked ? 'Unlock terminal input' : 'Lock terminal input (safe scroll)'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[10px] font-black uppercase tracking-widest transition-all duration-200 ${
-              locked
-                ? 'bg-red-500/20 border-red-500/40 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
-                : 'bg-brand-accent/20 border-brand-accent/40 text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {locked ? <Lock size={12} /> : <Unlock size={12} />}
-            {locked ? 'Locked' : 'Lock'}
-          </button>
+          <div className="flex items-center gap-1.5 border-l border-brand-accent ml-1 pl-3">
+            {/* Reconnect button */}
+            {(connState === 'disconnected' || connState === 'auth_error') && (
+              <button
+                onClick={() => reconnect()}
+                className="p-1.5 rounded-md bg-brand-accent/20 border border-brand-accent/40 text-slate-400 hover:text-brand-success transition-colors"
+                title="Reconnect Shell"
+              >
+                <RefreshCw size={14} />
+              </button>
+            )}
+
+            {/* Clear Buffer */}
+            <button
+              onClick={() => clearBuffer()}
+              className="p-1.5 rounded-md bg-brand-accent/20 border border-brand-accent/40 text-slate-400 hover:text-red-400 transition-colors"
+              title="Clear Terminal Buffer"
+            >
+              <Trash2 size={14} />
+            </button>
+
+            {/* Terminal Lock toggle */}
+            <button
+              id="terminal-lock-toggle"
+              onClick={() => setLocked((l) => !l)}
+              title={locked ? 'Unlock terminal input' : 'Lock terminal input (safe scroll)'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[10px] font-black uppercase tracking-widest transition-all duration-200 ${
+                locked
+                  ? 'bg-red-500/20 border-red-500/40 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
+                  : 'bg-brand-accent/20 border-brand-accent/40 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {locked ? <Lock size={12} /> : <Unlock size={12} />}
+              <span className="hidden xs:inline">{locked ? 'Locked' : 'Lock'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ─── Terminal canvas ─── */}
       <div className="relative flex-1 min-h-0 bg-[#0a0f1a]">
-        {/* Lock overlay: visual indicator that input is disabled */}
+        {/* Lock overlay */}
         {locked && (
           <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
             <div className="flex flex-col items-center gap-2 opacity-30">
@@ -205,7 +167,6 @@ export default function TerminalPage() {
           </div>
         )}
 
-        {/* xterm mounts here — flex-1 ensures it fills all available height */}
         <div
           ref={containerRef}
           id="xterm-container"
