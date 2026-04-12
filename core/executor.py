@@ -7,6 +7,7 @@ import subprocess
 import logging
 import os
 import re
+import platform
 from typing import Optional
 
 LOG_PATH = "logs/executor.log"
@@ -40,8 +41,10 @@ def win_to_wsl(path: str) -> str:
 
 
 def sanitize_workspace_path(path: str) -> str:
-    """Ensure any path inside /workspace is WSL-safe."""
-    return win_to_wsl(path)
+    """Ensure any path inside /workspace is shell-safe for the host OS."""
+    if platform.system() == "Windows":
+        return win_to_wsl(path)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -66,38 +69,46 @@ def run_wsl(
     Returns:
         subprocess.CompletedProcess with returncode, stdout, stderr.
     """
-    wsl_cwd = win_to_wsl(cwd) if cwd else None
+    # 1. OS-Aware Path Sanitization
+    is_linux = platform.system() == "Linux"
+    shell_cwd = win_to_wsl(cwd) if (cwd and not is_linux) else cwd
 
-    if wsl_cwd:
-        full_command = f'cd "{wsl_cwd}" && {command}'
+    if shell_cwd:
+        full_command = f'cd "{shell_cwd}" && {command}'
     else:
         full_command = command
 
-    wsl_args = ["wsl", "bash", "-c", full_command]
+    # 2. Command Prefixing
+    if is_linux:
+        shell_args = ["bash", "-c", full_command]
+        marker = "NATIVE"
+    else:
+        shell_args = ["wsl", "bash", "-c", full_command]
+        marker = "WSL"
 
-    logging.info(f"WSL EXEC: {full_command}")
-    print(f"[EXECUTOR] WSL > {full_command}")
+    logging.info(f"{marker} EXEC: {full_command}")
+    print(f"[EXECUTOR] {marker} > {full_command}")
 
     try:
         result = subprocess.run(
-            wsl_args,
+            shell_args,
             capture_output=capture,
             text=True,
             timeout=timeout,
         )
         if result.returncode == 0:
-            logging.info(f"WSL SUCCESS (exit 0): {command[:80]}")
+            logging.info(f"{marker} SUCCESS (exit 0): {command[:80]}")
         else:
             logging.warning(
-                f"WSL FAILURE (exit {result.returncode}): {command[:80]}\n"
+                f"{marker} FAILURE (exit {result.returncode}): {command[:80]}\n"
                 f"stderr: {result.stderr[:500]}"
             )
         return result
     except subprocess.TimeoutExpired:
-        logging.error(f"WSL TIMEOUT after {timeout}s: {command[:80]}")
+        logging.error(f"{marker} TIMEOUT after {timeout}s: {command[:80]}")
         raise
     except Exception as e:
-        logging.error(f"WSL EXEC ERROR: {e}")
+        logging.error(f"{marker} EXEC ERROR: {e}")
         raise
 
 
