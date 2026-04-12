@@ -40,7 +40,8 @@ SYSTEM_STATE = {
     "is_running": False,
     "current_repo": "None",
     "last_run": None,
-    "provisioned_repos": [] # Local folders in workspace/
+    "provisioned_repos": [], # Local folders in workspace/
+    "verified_repos": []     # Repos that have passed grounding
 }
 
 # --- State Management ---
@@ -76,6 +77,9 @@ class ApprovalAction(BaseModel):
 class ProvisionRequest(BaseModel):
     target_repo: Optional[str] = None # Full HTTPS URL
     url: Optional[str] = None # Fallback key
+
+class VerifyRequest(BaseModel):
+    repo_path: str # The folder name in workspace/
 
 def load_json(path: str, default: dict) -> dict:
     if os.path.exists(path):
@@ -301,6 +305,15 @@ def get_status():
     is_running = SYSTEM_STATE["is_running"]
     current_task = f"Executing {active_agent} mission..." if is_running else "Idle"
 
+    # Needs Verification check
+    needs_verification = False
+    provisioned = SYSTEM_STATE["provisioned_repos"]
+    verified = SYSTEM_STATE["verified_repos"]
+    for repo in provisioned:
+        if repo not in verified:
+            needs_verification = True
+            break
+
     return {
         "github_status": rate_limit,
         "miner_uptime": uptime_str,
@@ -308,7 +321,9 @@ def get_status():
         "is_running": is_running,
         "current_task": current_task,
         "timestamp": datetime.now().isoformat(),
-        "provisioned_repos": SYSTEM_STATE["provisioned_repos"]
+        "provisioned_repos": provisioned,
+        "verified_repos": verified,
+        "needs_verification": needs_verification
     }
 
 @app.post("/agent/run")
@@ -512,6 +527,26 @@ def scan_repository(request: RepoRequest, background_tasks: BackgroundTasks):
         
     background_tasks.add_task(run_scout_sync, url)
     return {"status": "started", "agent": "scout", "target": url}
+
+@app.post("/repo/verify")
+def verify_repository(request: VerifyRequest):
+    """Triggers the Discovery Audit (Grounding) for a provisioned repository."""
+    repo_folder = request.repo_path.strip().lower()
+    
+    try:
+        scout = SurgicalScoutV3()
+        result = scout.verify_grounding(repo_folder)
+        
+        if result.get("status") == "VERIFIED":
+            global SYSTEM_STATE
+            if repo_folder not in SYSTEM_STATE["verified_repos"]:
+                SYSTEM_STATE["verified_repos"].append(repo_folder)
+            return {"status": "success", "msg": "Grounding verified.", "data": result}
+        else:
+            return {"status": "uncertain", "msg": "Grounding uncertain. Entry point MIA.", "data": result}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Approvals Workflow ---
 @app.get("/approvals")

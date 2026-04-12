@@ -52,14 +52,24 @@ def sanitize_workspace_path(path: str) -> str:
 # ---------------------------------------------------------------------------
 
 def run_bootstrap(cwd: str, marker: str) -> None:
-    """Detects and installs dependencies for the target workspace."""
+    """Detects and installs dependencies for the target workspace using uv priority."""
     if not cwd or not os.path.exists(cwd):
         return
 
-    # 1. Python (pyproject.toml or requirements.txt)
+    # 1. Python (uv priority)
     if os.path.exists(os.path.join(cwd, "pyproject.toml")) or os.path.exists(os.path.join(cwd, "requirements.txt")):
-        cmd = "python3 -m pip install -e . || python3 -m pip install -r requirements.txt"
-        logging.info(f"{marker} BOOTSTRAP: Detected Python. Installing deps...")
+        # Check for uv binary safely
+        has_uv = subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
+        
+        if has_uv:
+            if os.path.exists(os.path.join(cwd, "pyproject.toml")):
+                cmd = "uv sync || uv pip install -e ."
+            else:
+                cmd = "uv pip install -r requirements.txt"
+        else:
+            cmd = "python3 -m pip install -e . || python3 -m pip install -r requirements.txt"
+            
+        logging.info(f"{marker} BOOTSTRAP: Detected Python. Using {'uv' if has_uv else 'pip'}...")
         print(f"[EXECUTOR] {marker} > BOOTSTRAP (Python) -> {cmd}")
         subprocess.run(["bash", "-c", f'cd "{cwd}" && {cmd}'], capture_output=True)
         return
@@ -108,6 +118,11 @@ def run_wsl(
     # Final interceptor to strip legacy prefixes
     command = command.replace("wsl ", "").replace("stty ", "true #")
     
+    # UV Run Wrap: If uv is present and it's a python command, wrap it
+    has_uv = subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
+    if has_uv and ("python3" in command or "python " in command) and "uv run" not in command:
+        command = f"uv run {command}"
+
     if tty_suffix.strip() in command:
         # Already spoofed, just use the command as-is
         processed_cmd = command
