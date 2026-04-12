@@ -159,7 +159,7 @@ class LlmClient:
                     print(f"  [LLM] 503 HTML detected. Archiving response and rotating...")
                     
                     rotated = self._get_next_key()
-                    delay = 30
+                    delay = 60
                     print(f"[Bored Operator]: Model 503. {'Key rotated. ' if rotated else ''}Cooling down for {delay}s...")
                     time.sleep(delay)
                     continue
@@ -202,3 +202,27 @@ class LlmClient:
                 continue
                 
         return f"LLM Error: Max retries ({max_retries}) exceeded after persistent 503/errors."
+
+    def _repair_json(self, json_str: str) -> str:
+        """Local-First JSON Recovery: Repairs common LLM truncation or escaping errors."""
+        json_str = json_str.strip()
+        # Handle potential Markdown wrapping tags
+        if json_str.startswith("```"):
+            json_str = json_str.split("\n", 1)[-1].strip("`").strip()
+            
+        if not json_str.startswith("{"):
+            json_str = "{" + json_str
+        
+        # Repair Unterminated Strings
+        if json_str.count('"') % 2 != 0:
+            json_str += '"'
+            
+        # Balance Braces
+        open_braces = json_str.count("{")
+        close_braces = json_str.count("}")
+        if open_braces > close_braces:
+            json_str += "}" * (open_braces - close_braces)
+        
+        # Cleanup leading/trailing junk
+        json_str = json_str.replace("  ", " ").strip()
+        return json_str

@@ -61,6 +61,13 @@ def run_bootstrap(cwd: str, marker: str) -> None:
         # Check for uv binary safely
         has_uv = subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
         
+        if not has_uv:
+            logging.info(f"{marker} BOOTSTRAP: uv missing. Attempting self-install...")
+            print(f"[EXECUTOR] {marker} > uv MIA. Provisioning via astral.sh...")
+            subprocess.run(["bash", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"], capture_output=True)
+            # Re-check after install (may need path reload in real shell, but here we check binary existence)
+            has_uv = subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
+
         if has_uv:
             if os.path.exists(os.path.join(cwd, "pyproject.toml")):
                 cmd = "uv sync || uv pip install -e ."

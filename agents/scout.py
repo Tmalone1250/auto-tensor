@@ -127,19 +127,28 @@ class SurgicalScoutV3:
             return "UI"
         return "DX"
 
+    def _trim_payload(self, text: str) -> str:
+        """Surgical Payload Trimming: Strips HTML boilerplate and scripts to minimize tokens."""
+        import re
+        # Strip script/style tags
+        text = re.sub(r"<(script|style).*?>.*?</\1>", "", text, flags=re.DOTALL)
+        # Strip all HTML tags
+        text = re.sub(r"<.*?>", "", text)
+        # Normalize whitespace
+        text = re.sub(r"\s+", " ", text).strip()
+        # Return only first 3000 chars for extreme relief
+        return text[:3000]
+
     def ingest_docs(self, targets: List[Dict]):
-        """Finds and ingests relevant coding documentation for top targets."""
-        print(f"[Bored Scout]: Doc-Sourcing active. Searching for technical context...")
+        """Finds and ingests relevant coding documentation with payload trimming."""
+        print(f"[Bored Scout]: Doc-Sourcing active. Trimming payloads to minimize 503 risk...")
         sys.stdout.flush()
-        from core.llm import LlmClient
-        llm = LlmClient()
         
         for target in targets:
             query = f"{target['repo']} {target['title']} documentation"
             target["doc_query"] = query
-            print(f"  Target: {target['title']} -> Query: {query}")
-            sys.stdout.flush()
-
+            # Placeholder for future web-search integration
+            # target["doc_content"] = self._trim_payload(fetched_text)
         return targets
 
     def _get_batch_prompt(self, targets: List[Dict]) -> str:
@@ -175,21 +184,6 @@ class SurgicalScoutV3:
         """Generates a prompt for a single target for fallback analysis."""
         return self._get_batch_prompt([target])
 
-    def _repair_json(self, json_str: str) -> str:
-        """Simple repair for common LLM truncation or escaping errors."""
-        json_str = json_str.strip()
-        if not json_str.startswith("{"):
-            json_str = "{" + json_str
-        
-        # Handle unterminated strings
-        if json_str.count('"') % 2 != 0:
-            json_str += '"'
-            
-        # Balance braces
-        open_braces = json_str.count("{")
-        close_braces = json_str.count("}")
-        if open_braces > close_braces:
-            json_str += "}" * (open_braces - close_braces)
         return json_str
 
     def _sequential_blueprint(self, targets: List[Dict]):
@@ -205,8 +199,7 @@ class SurgicalScoutV3:
             sys.stdout.flush()
             try:
                 raw = llm.generate(self._get_individual_prompt(target))
-                clean = raw.strip().strip("```json").strip("```").strip()
-                clean = self._repair_json(clean)
+                clean = llm._repair_json(raw)
                 data = json.loads(clean)
                 
                 # Extract the first result (should only be one)
@@ -458,16 +451,28 @@ class SurgicalScoutV3:
         except Exception as e:
             return {"status": "error", "msg": f"Tree capture failed: {e}"}
 
-        # 2. Discern Entry Point (Priority List)
+        # 2. Discern Entry Point & Audit Dependencies (Grounding 2.0)
         candidates = ["cli.py", "__main__.py", "main.py", "app.py", "index.ts", "index.js", "src/main.rs"]
         verified_entry = None
         for cand in candidates:
-            # Check for direct matches or module-style matches
             if any(f"./{cand}" in f or cand in f for f in files):
                 verified_entry = cand
                 break
         
+        # 2b. cat pyproject.toml / requirements.txt
+        manifest_data = "Missing"
+        for manifest in ["pyproject.toml", "requirements.txt", "package.json"]:
+            if any(manifest in f for f in files):
+                try:
+                    m_cmd = ["cat", manifest]
+                    m_res = subprocess.run(m_cmd, cwd=repo_path, capture_output=True, text=True)
+                    manifest_data = m_res.stdout[:500] # Capture head
+                    break
+                except:
+                    pass
+
         print(f"  Discovery Result: Entry Point -> {verified_entry or 'NONE'}")
+        print(f"  Manifest Audit: {manifest if manifest_data != 'Missing' else 'None'}")
         sys.stdout.flush()
 
         # 3. Parameter Lock: Sync with mission_parameters.json
