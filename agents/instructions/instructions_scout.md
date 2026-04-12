@@ -8,6 +8,10 @@ CONSTRAINTS:
 - TERMINAL SPOOFING: Use 'export COLUMNS=40; export LINES=24;'.
 - BOUNTY PRIORITY: Prioritize OWNER/MEMBER associations (1.66x Multiplier).
 
+## PREMIUM REPOS
+- gittensor
+- auto-tensor
+
 ## Forbidden Patterns
 (Captures historical regressions here)
 - FORBIDDEN: wsl prefix

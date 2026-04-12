@@ -118,11 +118,25 @@ class SurgicalScoutV3:
             if label in labels:
                 score += boost
             
-        # Bounty Hunter v2.4: Maintainer Multiplier (1.66x)
+        # Premium Repo Multiplier (1.66x Hard-Lock)
+        # Load premium list from instructions if available
+        premium_repos = []
+        if hasattr(self, "instructions"):
+             # Simple regex to find names under '## PREMIUM REPOS'
+             match = re.search(r"## PREMIUM REPOS(.*?)(?=\n##|$)", self.instructions, re.DOTALL)
+             if match:
+                 premium_repos = [r.strip("- ").strip() for r in match.group(1).splitlines() if r.strip()]
+
+        repo_base = issue["repo"].split("/")[-1].lower() if "/" in issue["repo"] else issue["repo"].lower()
+        is_premium = any(p in issue["repo"].lower() or p in repo_base for p in premium_repos)
+
+        # Bounty Hunter v2.4+: Maintainer or Premium Multiplier
         maintainer_roles = ["OWNER", "MEMBER", "COLLABORATOR"]
-        if author_assoc in maintainer_roles:
+        if author_assoc in maintainer_roles or is_premium:
             score = int(score * 1.66)
             issue["multiplier"] = 1.66
+            if is_premium:
+                print(f"  [PREMIUM LOCK]: {issue['repo']} matched premium list. 1.66x enforced.")
         else:
             issue["multiplier"] = 1.0
             
@@ -238,18 +252,26 @@ class SurgicalScoutV3:
                 target["surgical_files"] = []
             sys.stdout.flush()
 
-    def _sanitize_commands(self, cmd_str: str) -> str:
-        """Surgical scrubbing of legacy prefixes and enforcement of narrow-terminal spoofing."""
-        if not cmd_str: return ""
-        import re
-        # Strip 'wsl ' and 'stty ...' surgically
-        clean = re.sub(r"\bwsl\s+", "", cmd_str)
-        clean = re.sub(r"\bstty\s+.*?(;|&&|$)", "", clean)
+    def _sanitize_commands(self, cmd: str) -> str:
+        """Strips legacy prefixes and wraps Python in bash-c for terminal spoofing."""
+        if not cmd:
+             return "ls -R"
+             
+        clean = cmd.strip().replace("wsl ", "").replace("  ", " ")
         
-        # Enforce TTY spoofing prefix (Exact-Once)
+        # Enforce TTY spoofing prefix
         tty_prefix = "export COLUMNS=40; export LINES=24; "
+        
+        # Shell Mandate v2.6: Wrap python executions in bash -c with environment
+        if "python3" in clean and 'bash -c "' not in clean:
+             # Identify the actual python command part
+             parts = clean.split("python3", 1)
+             py_cmd = f"python3{parts[1]}".strip()
+             return f'bash -c "{tty_prefix}{py_cmd}"'
+        
         if tty_prefix.strip() not in clean:
             clean = f"{tty_prefix}{clean}"
+             
         return clean.strip().replace("  ", " ")
 
     def scan(self, target_repo: str = None):
@@ -347,8 +369,11 @@ class SurgicalScoutV3:
                     # LTM Override: Use verified knowledge if available
                     local_skill = self.memory.get_repo_skill(target["repo"])
                     if local_skill:
-                         print(f"  [LTM OVERRIDE]: Locking verified entry point for {target['repo']}")
-                         target["repro_cmd"] = self._sanitize_commands(local_skill.get("strategy", res.get("repro_cmd")))
+                         entry = local_skill.get("entry_point")
+                         print(f"  [LTM OVERRIDE]: Locking verified entry point: {entry}")
+                         # Construct a high-fidelity repro command from disk reality
+                         repro = f"python3 {entry} help" if entry and entry.endswith(".py") else "ls -R"
+                         target["repro_cmd"] = self._sanitize_commands(repro)
                     else:
                          target["repro_cmd"] = self._sanitize_commands(res.get("repro_cmd", "ls -R"))
                          
@@ -480,13 +505,32 @@ class SurgicalScoutV3:
         except Exception as e:
             return {"status": "error", "msg": f"Tree capture failed: {e}"}
 
-        # 2. Discern Entry Point & Audit Dependencies (Grounding 2.0)
-        candidates = ["cli.py", "__main__.py", "main.py", "app.py", "index.ts", "index.js", "src/main.rs"]
+        # 2. Discern Entry Point & Audit Dependencies (Audit 2.0: Deep-Path Priority)
+        py_files = [f.lstrip("./") for f in files if f.endswith(".py")]
+        
+        # Priority 1: CLI/BIN folders
+        cli_matches = [f for f in py_files if "cli/" in f or "bin/" in f or "scripts/" in f]
+        # Priority 2: main/app entry points
+        entry_patterns = ["__main__.py", "main.py", "cli.py", "app.py"]
+        
         verified_entry = None
-        for cand in candidates:
-            if any(f"./{cand}" in f or cand in f for f in files):
-                verified_entry = cand
-                break
+        if cli_matches:
+            # Pick the deepest cli match (most likely the actual tool entry)
+            verified_entry = max(cli_matches, key=lambda x: x.count("/"))
+        else:
+            for pattern in entry_patterns:
+                matches = [f for f in py_files if f.endswith(pattern)]
+                if matches:
+                    verified_entry = max(matches, key=lambda x: x.count("/"))
+                    break
+        
+        # Fallback to absolute basics if no Python logic found
+        if not verified_entry:
+            candidates = ["index.ts", "index.js", "src/main.rs"]
+            for cand in candidates:
+                if any(cand in f for f in files):
+                    verified_entry = cand
+                    break
         
         # 2b. cat pyproject.toml / requirements.txt
         manifest_data = "Missing"
