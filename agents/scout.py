@@ -18,7 +18,7 @@ class SurgicalScoutV3:
         
         self.github_pat = os.getenv("GITHUB_KEY")
         if not self.github_pat:
-            print("Warning: GITHUB_KEY not found in environment. Rate limits will be very tight.")
+            print("[CRITICAL] Miner PAT not found. Contribution eligibility at risk. Rate limits will be very tight.")
             sys.stdout.flush()
 
         self.registry_path = "core/registry.json"
@@ -83,6 +83,7 @@ class SurgicalScoutV3:
         score = 5 # Base score
         body = (issue.get("body") or "").lower()
         title = (issue.get("title") or "").lower()
+        author_assoc = issue.get("author_association", "NONE")
         
         # Type Hardening Prioritization
         if "any" in body or "missing interface" in body or "interface" in body:
@@ -99,6 +100,11 @@ class SurgicalScoutV3:
             score += 2
         if "bug" in labels:
             score += 1
+            
+        # Bounty Hunter v2.4: Maintainer Multiplier (1.66x)
+        maintainer_roles = ["OWNER", "MEMBER", "COLLABORATOR"]
+        if author_assoc in maintainer_roles:
+            score = int(score * 1.66)
             
         return min(10, max(1, score))
 
@@ -126,25 +132,26 @@ class SurgicalScoutV3:
         return targets
 
     def _get_batch_prompt(self, targets: List[Dict]) -> str:
-        persona_note = "You are a DevOps Engineer specializing in Systems Reliability. Identify the absolute top highest-priority, surgical-fix candidates. Quality over quantity."
+        persona_note = "You are a DevOps Engineer specializing in Systems Reliability. Your priority is Gittensor Reward Maximization. Identify the top highest-priority, structural-fix candidates."
         issues_text = ""
         for t in targets:
             issues_text += f"---\nID: {t['id']}\nRepo: {t['repo']}\nTitle: {t['title']}\nBody: {t.get('body', '')[:600]}\n"
         
         return (
             f"{persona_note}\n\n"
-            f"Propose a concise, surgical fix strategy for each of the following GitHub issues.\n\n"
+            f"Propose a concise, structural fix strategy for each of the following GitHub issues.\n\n"
             f"{issues_text}\n"
+            "REWARD FOCUS: Prioritize structural logic changes (refactoring functions, fixing control flow, class inheritance) over 'Leaf Fixes' (text literal changes, documentation). Aim for a high token_score / total_lines ratio.\n\n"
             "Return your analysis as a structured JSON object with a 'results' key containing an array of objects. "
             "IMPORTANT: JSON Strings must not contain unescaped newlines. Use \\n for line breaks.\n\n"
             "Each object MUST use these exact keys:\n"
             "- 'id' (integer from the input)\n"
             "- 'target_repo' (the full GitHub HTTPS URL for the repository)\n"
             "- 'strategy' (detailed Markdown string explaining the fix)\n"
-            "- 'repro_cmd' (the EXACT bash command to run in the repo to trigger/see the failure. You MUST provide this as an actionable shell string. If unknown, best-guess based on tech stack: e.g. 'npm install && npm test' for JS, 'python3 -m pytest' for Python, etc.)\n"
-            "- 'fix_cmd' (the EXACT bash command to run to verify the fix works, like 'npm test' or 'make build')\n"
+            "- 'repro_cmd' (the EXACT bash command to run in the repo to trigger/see the failure.)\n"
+            "- 'fix_cmd' (the EXACT bash command to run to verify the fix works.)\n"
             "- 'surgical_files' (list of strings representing the files to be modified).\n\n"
-            "Be direct, technically precise, and bored. "
+            "Be direct, technically precise, and obsessed with code density. "
             "Return ONLY the JSON object. No preamble."
         )
 
