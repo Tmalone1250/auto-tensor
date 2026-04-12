@@ -89,17 +89,19 @@ class SurgicalScoutV3:
         if "any" in body or "missing interface" in body or "interface" in body:
             score += 3
         
-        # Complexity penalty if near the limit
-        comments = issue.get("comments", 0)
-        if comments > 10:
-            score -= 1
-            
-        # Priority labels (Structural Focus v2.4)
+        # Priority labels (Structural Focus v2.4 - Gittensor Quality Gate)
         labels = [l["name"].lower() for l in issue.get("labels", [])]
-        structural_labels = ["performance", "logic", "refactor", "bug"]
-        for label in labels:
-            if label in structural_labels:
-                score += 2
+        # Performance/Logic/Bug carry the highest reward potential for AST Density
+        structural_labels = {
+            "performance": 3,
+            "logic": 3,
+            "refactor": 2,
+            "bug": 2,
+            "security": 2
+        }
+        for label, boost in structural_labels.items():
+            if label in labels:
+                score += boost
             
         # Bounty Hunter v2.4: Maintainer Multiplier (1.66x)
         maintainer_roles = ["OWNER", "MEMBER", "COLLABORATOR"]
@@ -109,6 +111,10 @@ class SurgicalScoutV3:
         else:
             issue["multiplier"] = 1.0
             
+        # Code Density Cap: Ensure we don't pick fluff
+        if any(kw in title for kw in ["typo", "docs", "readme", "comment"]):
+             score -= 4
+
         return min(10, max(1, score))
 
     def categorize(self, issue: Dict[Any, Any]) -> str:

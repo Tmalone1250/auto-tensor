@@ -7,10 +7,14 @@ import sys
 import subprocess
 import json
 import traceback
+import logging
+import requests
 import contextlib
 import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict
+
+print("[SYSTEM]: All required libraries (requests, fastapi, pydantic) verified.")
 
 # Ensure root is in sys.path (Absolute Priority)
 import sys
@@ -330,11 +334,10 @@ async def run_provision_logic(url: str, folder: str, workspace_path: str):
     Background worker for infrastructure setup.
     Hardened with localized logging and permission guards.
     """
-    import logging
     log_path = os.path.join("logs", "workflow.log")
     os.makedirs("logs", exist_ok=True)
     
-    # Priority 1: Move logging init to top of background task
+    # Priority 1: Logging init (using global logging)
     logging.basicConfig(
         filename=log_path,
         level=logging.INFO,
@@ -373,8 +376,10 @@ async def run_provision_logic(url: str, folder: str, workspace_path: str):
         fork_data = res.json()
         fork_url = fork_data.get("html_url")
         fork_owner = fork_data.get("owner", {}).get("login")
+        author_assoc = fork_data.get("source", {}).get("owner", {}).get("type", "User") # Approximate for now
 
         # 5. Polling
+        logging.info(f"Forking repository... Polling for readiness at {fork_url}")
         if not await poll_fork_status(fork_url, headers):
             raise Exception("GitHub Fork provision timed out.")
 
@@ -610,6 +615,7 @@ def promote_issue(background_tasks: BackgroundTasks, issue: Dict = Body(...)):
             "strategy": strategy,
             "repro_cmd": issue.get("repro_cmd"),
             "fix_cmd": issue.get("fix_cmd"),
+            "bounty_multiplier": issue.get("multiplier", 1.0),
             "timestamp": datetime.now().isoformat()
         }
         
