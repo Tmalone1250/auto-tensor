@@ -8,9 +8,12 @@ import logging
 import requests
 from datetime import datetime
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # --- Configuration ---
 GITHUB_KEY = os.getenv("GITHUB_KEY")
-QUOTA_THRESHOLD = 750       # 15% of 5,000
+QUOTA_RATIO = 0.05          # 5% of limit
 HEARTBEAT_LOW = "HEARTBEAT_LOW"
 HEARTBEAT_OK  = "HEARTBEAT_OK"
 LOG_PATH = "logs/governor.log"
@@ -39,7 +42,7 @@ def check_rate_limit() -> dict:
         return {}
 
 
-def governor_gate() -> bool:
+def governor_gate(force: bool = False) -> bool:
     """
     The Governor.
 
@@ -49,6 +52,12 @@ def governor_gate() -> bool:
     Miner Priority Rule:
         Any failure here results in an immediate halt of all Scout/Coder activity.
     """
+    # Environment override
+    if os.getenv("GOVERNOR_OVERRIDE") == "true" or force:
+        logging.warning("Governor: FORCE OVERRIDE active. Bypassing safety checks.")
+        print("[GOVERNOR] FORCE OVERRIDE active. Proceeding regardless of quota.")
+        return True
+
     core = check_rate_limit()
 
     if not core:
@@ -59,23 +68,24 @@ def governor_gate() -> bool:
     remaining = core.get("remaining", 0)
     reset_ts   = core.get("reset", 0)
     limit      = core.get("limit", 5000)
-
+    
+    threshold = int(limit * QUOTA_RATIO)
     pct = (remaining / limit * 100) if limit else 0
-    status = HEARTBEAT_OK if remaining >= QUOTA_THRESHOLD else HEARTBEAT_LOW
+    status = HEARTBEAT_OK if remaining >= threshold else HEARTBEAT_LOW
 
     logging.info(
-        f"Governor: {status} | remaining={remaining}/{limit} ({pct:.1f}%) | "
+        f"Governor: {status} | remaining={remaining}/{limit} (Threshold: {threshold}) | "
         f"reset={datetime.utcfromtimestamp(reset_ts).strftime('%H:%M:%S UTC')}"
     )
 
     if status == HEARTBEAT_LOW:
         sleep_seconds = max(0, reset_ts - int(time.time())) + 60  # +60s buffer
         logging.warning(
-            f"Governor: {HEARTBEAT_LOW} — quota below 15%. "
+            f"Governor: {HEARTBEAT_LOW} — quota below {QUOTA_RATIO*100}%. "
             f"Entering mandatory sleep for {sleep_seconds}s. "
             f"Miner has priority. All Scout/Coder activity HALTED."
         )
-        print(f"[GOVERNOR] {HEARTBEAT_LOW} — sleeping {sleep_seconds}s until quota resets.")
+        print(f"[GOVERNOR] {HEARTBEAT_LOW} — remaining={remaining}/{limit} — sleeping {sleep_seconds}s until quota resets.")
         time.sleep(sleep_seconds)
         # Re-check after sleep
         return governor_gate()

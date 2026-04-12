@@ -1,113 +1,144 @@
 """
-agents/coder.py — Coder Agent v1.0
-Surgical Fix Orchestrator for Auto-Tensor.
-Governed by core/health_check.py and routes all shell commands via core/executor.py.
+agents/coder.py — Directive-Driven Coder Agent
+Surgical Fix Orchestrator that follows standardized Intelligence Handoffs.
+Governed by core/health_check.py and executes via core/executor.py.
 """
 import os
 import sys
 import json
 import logging
+import time
 from datetime import datetime
+from typing import Dict, Any, Optional
 
+# Ensure project root is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.health_check import governor_gate
-from core.executor import run_wsl_in_workspace, win_to_wsl
 
-LOG_PATH = "logs/coder.log"
+from core.health_check import governor_gate
+from core.executor import run_wsl_in_workspace
+from core.llm import LlmClient
+
+# --- Configuration ---
+LOG_DIR = "logs"
+MAIN_LOG = os.path.join(LOG_DIR, "coder.log")
+MISSION_PARAMS = os.path.join(LOG_DIR, "mission_parameters.json")
+
+os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
-    filename=LOG_PATH,
+    filename=MAIN_LOG,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-REPO_SUBPATH = "optimism/rust/kona"
-TARGET_SPEC   = "kona/docker/cannon/mips64-unknown-none.json"
-IMAGE         = "us-docker.pkg.dev/oplabs-tools-artifacts/images/cannon-builder:v1.0.0"
+import argparse
 
+# --- Global Force Mode ---
+FORCE_MODE = False
 
-def reproduce_before(log_path: str) -> str:
-    """Run the UNFIXED build to capture the 'Before' error log."""
-    logging.info("Coder: Reproducing BEFORE state (unpatched justfile).")
-    result = run_wsl_in_workspace(
-        REPO_SUBPATH,
-        f"docker.exe run --rm "
-        f"-v \"$(wslpath -w $(pwd)):/workdir\" "
-        f"-w=/workdir {IMAGE} "
-        f"cargo build -Zbuild-std=core,alloc -Zjson-target-spec "
-        f"-p kona-client --bin kona-client --profile release-client-lto",
-        timeout=600,
-    )
-    before_log = result.stderr or result.stdout
-    with open(log_path, "w") as f:
-        f.write(before_log)
-    return before_log
+def log_and_print(msg: str, level: str = "info"):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    display_msg = f"[{timestamp}] [CODER] {msg}"
+    print(display_msg)
+    if level == "info":
+        logging.info(msg)
+    elif level == "error":
+        logging.error(msg)
+    elif level == "warning":
+        logging.warning(msg)
 
+def run_step(mission_id: str, repo: str, command: str, step_name: str) -> str:
+    """Executes a command inside the target repo with Governor oversight."""
+    log_and_print(f"Checking Governor clearance for {step_name}...")
+    if not governor_gate(force=FORCE_MODE):
+        log_and_print("Governor BLOCKED — Miner has priority. Waiting for clearance...", "warning")
+        # In a real environment, we might sleep and retry, but here we exit to respect priority
+        sys.exit(0)
 
-def reproduce_after(log_path: str) -> tuple[bool, str]:
-    """Run the FIXED build to capture the 'After' success log."""
-    logging.info("Coder: Running AFTER state (with --target override).")
-    result = run_wsl_in_workspace(
-        REPO_SUBPATH,
-        f"docker.exe run --rm "
-        f"-v \"$(wslpath -w $(pwd)):/workdir\" "
-        f"-w=/workdir {IMAGE} "
-        f"cargo build -Zbuild-std=core,alloc -Zjson-target-spec "
-        f"--target {TARGET_SPEC} "
-        f"-p kona-client --bin kona-client --profile release-client-lto",
-        timeout=600,
-    )
-    after_log = result.stdout + result.stderr
-    with open(log_path, "w") as f:
-        f.write(after_log)
-    return result.returncode == 0, after_log
+    log_and_print(f"Executing {step_name} in {repo}...")
+    result = run_wsl_in_workspace(repo, command, timeout=600)
+    
+    log_content = result.stdout + result.stderr
+    log_file = os.path.join(LOG_DIR, f"{step_name.lower()}_{mission_id}.log")
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write(log_content)
+    
+    status = "SUCCESS" if result.returncode == 0 else "FAILED"
+    log_and_print(f"{step_name} finished: {status}")
+    return log_content
 
+def execute_mission():
+    """Main lifecycle for Directive-Driven Orchestration."""
+    parser = argparse.ArgumentParser(description="Auto-Tensor Coder Agent")
+    parser.add_argument("--force", action="store_true", help="Bypass Governor safety gates")
+    args = parser.parse_args()
+    
+    global FORCE_MODE
+    FORCE_MODE = args.force
+    
+    if FORCE_MODE:
+        log_and_print("FORCE MODE ENABLED: Safety gates bypassed.", "warning")
 
-def run():
-    print("[CODER] Checking Governor clearance...")
-    if not governor_gate():
-        print("[CODER] Governor BLOCKED — Miner has priority. Halting.")
+    log_and_print("--- STARTING CODER MISSION ---")
+    
+    if not os.path.exists(MISSION_PARAMS):
+        log_and_print("Waiting for orders... (mission_parameters.json NOT FOUND)", "warning")
         return
 
-    # Load directive
-    mission_params_path = "logs/mission_parameters.json"
-    strategy = "Explore and fix based on repository context."
-    if os.path.exists(mission_params_path):
-        try:
-            with open(mission_params_path, "r") as f:
-                params = json.load(f)
-                strategy = params.get("strategy", strategy)
-                print(f"[CODER] MISSION DIRECTIVE RECEIVED: {params.get('title')}")
-        except Exception as e:
-            print(f"Error loading mission params: {e}")
+    try:
+        with open(MISSION_PARAMS, "r", encoding="utf-8") as f:
+            params: Dict[str, Any] = json.load(f)
+    except Exception as e:
+        log_and_print(f"CRITICAL: Failed to parse mission parameters: {e}", "error")
+        return
 
-    print("[CODER] Governor cleared. Beginning directed reproduction sequence.")
+    mission_id = params.get("mission_id", "UNTITLED")
+    target_repo = params.get("target_repo")
+    strategy = params.get("strategy")
+    repro_cmd = params.get("repro_cmd")
+    fix_cmd = params.get("fix_cmd")
 
-    # In a real implementation, 'strategy' would drive the reproduction logic.
-    # For now, we execute the Kona sequence while respecting the directive persona.
-    before_log = reproduce_before("logs/before_build.log")
-    success, after_log = reproduce_after("logs/after_build.log")
+    # Guard: Missing critical fields
+    if not all([target_repo, repro_cmd, fix_cmd]):
+        log_and_print(f"CRITICAL: Mission {mission_id} is malformed. Missing repo/cmds.", "error")
+        return
 
-    status = "SUCCESS" if success else "FAILED"
+    log_and_print(f"MISSION LOADED: {mission_id} ({params.get('title', 'No Title')})")
+    log_and_print(f"STRATEGY: {strategy}")
+
+    # 1. Reproduce BEFORE
+    before_log = run_step(mission_id, target_repo, repro_cmd, "BEFORE")
     
-    # Persona & Directive injection
-    from core.llm import LlmClient
+    # 2. Execute FIX
+    after_log = run_step(mission_id, target_repo, fix_cmd, "AFTER")
+
+    # 3. Final Bored Review
+    generate_bored_report(params, before_log, after_log)
+
+def generate_bored_report(params: Dict[str, Any], before: str, after: str):
+    """Generates the 'Bored Expert' delta report."""
     llm = LlmClient()
     
-    # The 'Secret Sauce' Prompt
-    body_context = params.get("body", "No additional context.")
-    directive_prompt = (
-        f"SYSTEM: You are a bored expert contributor. An architect has already scouted this issue and provided the following STRATEGY: [{strategy}].\n"
-        f"FULL ISSUE CONTEXT: {body_context[:2000]}\n\n"
-        f"Your goal is to execute this specific fix with 100% precision. Do not explore unrelated files. Do not refactor. Just fulfill the directive and verify the build."
+    mission_id = params.get("mission_id")
+    strategy = params.get("strategy")
+    
+    system_prompt = (
+        "You are a senior systems engineer and an Elite, Bored Contributor. "
+        "Your only interest is the DELTA between 'Before' logs (failures) and 'After' logs (fixes/scars). "
+        "Keep it highly technical, cynical, and brief. Avoid fluff like 'Hello' or 'I hope this helps'. "
+        "Focus on whether the build actually succeeded or why it's still bleeding."
     )
     
-    repro_msg = f"Reproduction complete for {REPO_SUBPATH}. Result: {status}. Strategy followed: {strategy[:100]}..."
-    casual_msg = llm.generate(repro_msg, system_override=directive_prompt)
-    
-    print(f"\n[Bored Coder]: {casual_msg}")
-    logging.info(f"Coder: Mission complete. Strategy: {strategy[:50]}... Result: {status}")
+    prompt = (
+        f"MISSION: {mission_id}\n"
+        f"STRATEGY: {strategy}\n\n"
+        f"--- BEFORE LOG (FAIL) ---\n{before[-1500:]}\n\n"
+        f"--- AFTER LOG (RESULT) ---\n{after[-1500:]}\n\n"
+        f"Task: Review the delta and provide a closing remark on the mission success."
+    )
 
-    return {"before": before_log[:500], "after": after_log[:500], "success": success}
+    report = llm.generate(prompt, system_override=system_prompt)
+    print(f"\n[Bored Coder]:\n{report}\n")
+    log_and_print(f"Mission {mission_id} review complete.")
 
 if __name__ == "__main__":
-    run()
+    execute_mission()
