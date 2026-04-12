@@ -55,6 +55,7 @@ app = FastAPI(title="Auto-Tensor Command Bridge")
 
 @app.on_event("startup")
 async def startup_event():
+    os.makedirs("workspace", exist_ok=True)
     await terminal_manager.start_gc()
 
 # --- Models ---
@@ -276,15 +277,26 @@ app.add_middleware(
 
 @app.get("/status")
 def get_status():
-    """Returns GitHub Quota, Uptime, and Process Status."""
+    """Returns GitHub Quota, Uptime, and Process Status with Disk-Aware Provisioning."""
     rate_limit = check_rate_limit()
     uptime_seconds = int(time.time() - pm.start_time)
+    
+    # Dynamic Disk Scanning: Look at what's actually on the VPS
+    workspace_path = "workspace"
+    disk_repos = []
+    if os.path.exists(workspace_path):
+        disk_repos = [
+            f for f in os.listdir(workspace_path) 
+            if os.path.isdir(os.path.join(workspace_path, f))
+        ]
+    
+    global SYSTEM_STATE
+    SYSTEM_STATE["provisioned_repos"] = list(set(disk_repos))
     
     hours, remainder = divmod(uptime_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     uptime_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    # Use Global SYSTEM_STATE for accurate UI reporting
     active_agent = SYSTEM_STATE["active_agent"]
     is_running = SYSTEM_STATE["is_running"]
     current_task = f"Executing {active_agent} mission..." if is_running else "Idle"
@@ -296,7 +308,7 @@ def get_status():
         "is_running": is_running,
         "current_task": current_task,
         "timestamp": datetime.now().isoformat(),
-        "provisioned_repos": SYSTEM_STATE.get("provisioned_repos", [])
+        "provisioned_repos": SYSTEM_STATE["provisioned_repos"]
     }
 
 @app.post("/agent/run")

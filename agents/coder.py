@@ -93,7 +93,8 @@ def get_repo_folder(target_repo: str) -> str:
 
 def execute_mission():
     """Main lifecycle for Directive-Driven Orchestration."""
-    # (Logging already initialized at module top)
+    # Priority: Immediate log visibility
+    log_and_print("BOOTING CODER AGENT v2.4 (Density Mode)...")
     
     parser = argparse.ArgumentParser(description="Auto-Tensor Coder Agent")
     parser.add_argument("repo", nargs="?", help="Target repository URL or folder name")

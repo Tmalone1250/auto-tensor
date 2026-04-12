@@ -145,7 +145,8 @@ const Intelligence: React.FC = () => {
 
   const getRepoFolder = (url: string | undefined): string => {
     if (!url) return "";
-    const clean = url.rstrip ? url.rstrip("/").replace(".git", "") : url.replace(".git", "");
+    // Fix: Remove Python .rstrip and replace with JS .replace(/\/$/, "")
+    const clean = url.replace(/\/$/, "").replace(".git", "");
     if (clean.includes("/")) {
       return clean.split("/").pop()?.toLowerCase() || "";
     }
