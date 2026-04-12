@@ -3,6 +3,7 @@ import requests
 import json
 import time
 import random
+import sys
 from typing import List, Dict
 
 try:
@@ -134,8 +135,6 @@ class LlmClient:
         
         current_model = "gemini-3-flash-preview"
         max_retries = 5
-        
-        import sys
         
         for attempt in range(max_retries):
             if not self.api_key:
