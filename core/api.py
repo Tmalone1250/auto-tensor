@@ -289,7 +289,8 @@ def get_status():
         "active_agent": active_agent,
         "is_running": is_running,
         "current_task": current_task,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "provisioned_repos": SYSTEM_STATE.get("provisioned_repos", [])
     }
 
 @app.post("/agent/run")

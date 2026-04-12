@@ -14,6 +14,7 @@ interface Target {
   category: string;
   delta_score: number;
   repo: string;
+  target_repo?: string;
   strategy?: string;
 }
 
@@ -24,12 +25,19 @@ const Intelligence: React.FC = () => {
   const [scanning, setScanning] = useState(false);
   const [refining, setRefining] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  
+  // Provisioning States
+  const [provisionedRepos, setProvisionedRepos] = useState<string[]>([]);
+  const [provisioningFolders, setProvisioningFolders] = useState<Set<string>>(new Set());
+  const [failedFolders, setFailedFolders] = useState<Set<string>>(new Set());
+  const [pollInterval, setPollInterval] = useState(5000); // 5s heartbeat
 
   const fetchIntelligence = async () => {
     try {
-      const [reportRes, logsRes] = await Promise.all([
+      const [reportRes, logsRes, statusRes] = await Promise.all([
         axios.get(`${API_BASE}/scout/report`),
-        axios.get(`${API_BASE}/logs?agent=scout`)
+        axios.get(`${API_BASE}/logs?agent=scout`),
+        axios.get(`${API_BASE}/status`)
       ]);
 
       if (reportRes.data && reportRes.data.top_targets) {
@@ -37,6 +45,19 @@ const Intelligence: React.FC = () => {
       }
 
       setLogs(logsRes.data.logs);
+      
+      const provisioned = statusRes.data.provisioned_repos || [];
+      setProvisionedRepos(provisioned.map((r: string) => r.toLowerCase()));
+      
+      // If none of the provisioning folders are missing anymore, we can stop fast polling
+      if (provisioningFolders.size > 0) {
+        const stillProvisioning = [...provisioningFolders].some(folder => !provisioned.map((r: string) => r.toLowerCase()).includes(folder));
+        if (!stillProvisioning) {
+          setProvisioningFolders(new Set());
+          setPollInterval(5000);
+        }
+      }
+
       setLoading(false);
     } catch (err) {
       console.error("Fetch intelligence failed:", err);
@@ -45,9 +66,18 @@ const Intelligence: React.FC = () => {
 
   useEffect(() => {
     fetchIntelligence();
-    const interval = setInterval(fetchIntelligence, 5000);
+    const interval = setInterval(fetchIntelligence, pollInterval);
     return () => clearInterval(interval);
-  }, []);
+  }, [pollInterval]);
+
+  // Adjust polling frequency based on active tasks
+  useEffect(() => {
+    if (provisioningFolders.size > 0) {
+      setPollInterval(3000); // High frequency (3s) while provisioning
+    } else {
+      setPollInterval(5000); // Normal heartbeat (5s)
+    }
+  }, [provisioningFolders.size]);
 
   const handleScan = async () => {
     if (!scanUrl) return;
@@ -110,6 +140,46 @@ const Intelligence: React.FC = () => {
       console.error("Failed to ignore issue:", err);
       // Optional: Refresh feed if server call fails
       fetchIntelligence();
+    }
+  };
+
+  const getRepoFolder = (url: string | undefined): string => {
+    if (!url) return "";
+    const clean = url.rstrip ? url.rstrip("/").replace(".git", "") : url.replace(".git", "");
+    if (clean.includes("/")) {
+      return clean.split("/").pop()?.toLowerCase() || "";
+    }
+    return clean.toLowerCase();
+  };
+
+  const handleProvision = async (targetRepo: string) => {
+    const folder = getRepoFolder(targetRepo);
+    if (!folder) return;
+
+    // Move to provisioning state (Global Sync: Affects all issues for this repo)
+    setProvisioningFolders(prev => new Set(prev).add(folder));
+    setFailedFolders(prev => {
+      const next = new Set(prev);
+      next.delete(folder);
+      return next;
+    });
+
+    try {
+      // Telemetry "Toast" (locally logged or displayed)
+      console.log(`[PROVISION]: Initializing Fork & Branch on GitHub for ${folder}...`);
+      
+      await axios.post(`${API_BASE}/repo/provision`, { target_repo: targetRepo });
+      
+      // Success: fetchIntelligence will catch the transition soon due to 3s polling
+      fetchIntelligence();
+    } catch (err) {
+      console.error("Provisioning failed:", err);
+      setProvisioningFolders(prev => {
+        const next = new Set(prev);
+        next.delete(folder);
+        return next;
+      });
+      setFailedFolders(prev => new Set(prev).add(folder));
     }
   };
 
@@ -226,12 +296,57 @@ const Intelligence: React.FC = () => {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => promote(target)}
-                    className="w-full py-3 bg-brand-success/10 hover:bg-brand-success/20 border border-brand-success/50 text-brand-success text-[10px] font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 group-hover:bg-brand-success/20 transition-all shadow-inner"
-                  >
-                    Promote to Engineering <ArrowUpRight size={14} />
-                  </button>
+                  {/* Dynamic Provisioning / Promote Button */}
+                  {(() => {
+                    const repoFolder = getRepoFolder(target.target_repo || target.repo);
+                    const isProvisioned = provisionedRepos.includes(repoFolder);
+                    const isProvisioning = provisioningFolders.has(repoFolder);
+                    const isFailed = failedFolders.has(repoFolder);
+
+                    if (isProvisioned) {
+                      return (
+                        <button
+                          onClick={() => promote(target)}
+                          className="w-full py-4 bg-brand-success/10 hover:bg-brand-success/20 border border-brand-success/50 text-brand-success text-[10px] font-mono font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 transition-all shadow-inner"
+                        >
+                          [PROMOTE TO CODER] <ArrowUpRight size={14} />
+                        </button>
+                      );
+                    }
+
+                    if (isProvisioning) {
+                      return (
+                        <button
+                          disabled
+                          className="w-full py-4 bg-brand-accent/10 border border-brand-accent/50 text-brand-accent text-[10px] font-mono font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 opacity-80 cursor-not-allowed"
+                        >
+                          <Loader2 className="animate-spin" size={14} />
+                          [PROVISIONING...]
+                        </button>
+                      );
+                    }
+
+                    if (isFailed) {
+                      return (
+                        <button
+                          onClick={() => handleProvision(target.target_repo || target.repo)}
+                          className="w-full py-4 bg-brand-danger/10 hover:bg-brand-danger/20 border border-brand-danger/50 text-brand-danger text-[10px] font-mono font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 transition-all shadow-inner"
+                        >
+                          <AlertCircle size={14} />
+                          [PROVISIONING FAILED - RETRY?]
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        onClick={() => handleProvision(target.target_repo || target.repo)}
+                        className="w-full py-4 bg-brand-warning/10 hover:bg-brand-warning/30 border border-brand-warning/50 text-brand-warning text-[10px] font-mono font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 transition-all shadow-inner group-hover:bg-brand-warning/20"
+                      >
+                        [FORK & CLONE] <ArrowUpRight size={14} className="rotate-45" />
+                      </button>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
