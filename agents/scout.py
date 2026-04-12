@@ -136,8 +136,14 @@ class SurgicalScoutV3:
             f"Propose a concise, surgical fix strategy for each of the following GitHub issues.\n\n"
             f"{issues_text}\n"
             "Return your analysis as a structured JSON object with a 'results' key containing an array of objects. "
-            "Each object MUST use these exact keys: 'id' (integer from the input), 'strategy' (detailed Markdown string), "
-            "'surgical_files' (list of strings). Be direct, technically precise, and bored. "
+            "Each object MUST use these exact keys:\n"
+            "- 'id' (integer from the input)\n"
+            "- 'target_repo' (the full GitHub HTTPS URL for the repository)\n"
+            "- 'strategy' (detailed Markdown string explaining the fix)\n"
+            "- 'repro_cmd' (the EXACT bash command to run in the repo to trigger/see the failure. Begin with setup like 'npm install' if needed)\n"
+            "- 'fix_cmd' (the EXACT bash command to run to verify the fix works, like 'npm test' or 'make build')\n"
+            "- 'surgical_files' (list of strings representing the files to be modified).\n\n"
+            "Be direct, technically precise, and bored. "
             "Return ONLY the JSON object. No preamble."
         )
 
@@ -169,6 +175,7 @@ class SurgicalScoutV3:
                     "body": issue.get("body", ""),
                     "url": issue["html_url"],
                     "repo": repo,
+                    "target_repo": f"https://github.com/{repo}",
                     "delta_score": delta_score,
                     "category": category
                 })
@@ -214,15 +221,25 @@ class SurgicalScoutV3:
                 res = results_map.get(target["id"])
                 if res:
                     target["strategy"] = res.get("strategy", "No strategy generated.")
+                    target["target_repo"] = res.get("target_repo", target.get("target_repo"))
+                    target["repro_cmd"] = res.get("repro_cmd", "ls -R")
+                    target["fix_cmd"] = res.get("fix_cmd", "ls -R")
                     target["surgical_files"] = res.get("surgical_files", [])
                 else:
                     target["strategy"] = "Strategist Offline: Batch slice missing for this ID."
+                    target["target_repo"] = target.get("target_repo")
+                    target["repro_cmd"] = "ls -R"
+                    target["fix_cmd"] = "ls -R"
+                    target["surgical_files"] = []
                     
         except Exception as e:
             print(f"[Bored Scout]: Batch Analysis failure: {e}")
             sys.stdout.flush()
             for target in top_n:
                 target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
+                target["repro_cmd"] = "ls -R"
+                target["fix_cmd"] = "ls -R"
+                target["surgical_files"] = []
             
         report = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -291,6 +308,8 @@ class SurgicalScoutV3:
                 res = results_map.get(target["id"])
                 if res:
                     target["strategy"] = res.get("strategy", "No strategy generated.")
+                    target["repro_cmd"] = res.get("repro_cmd", "ls -R")
+                    target["fix_cmd"] = res.get("fix_cmd", "ls -R")
                     target["surgical_files"] = res.get("surgical_files", [])
                     print(f"  Successfully refined: {target['title']}")
                 else:

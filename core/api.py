@@ -59,8 +59,8 @@ class ApprovalAction(BaseModel):
     action: str # "commit", "draft", "publish"
 
 # --- State Management ---
-REGISTRY_PATH = os.path.join("core", "registry.json")
-APPROVALS_PATH = os.path.join("logs", "approvals.json")
+REGISTRY_PATH = "core/registry.json"
+APPROVALS_PATH = "logs/approvals.json"
 
 def load_json(path: str, default: dict) -> dict:
     if os.path.exists(path):
@@ -103,14 +103,26 @@ class ProcessManager:
             log_file.write(f"Target: {target}\n")
         log_file.flush()
 
-        # Command to run inside the venv
-        venv_python = os.path.join(".venv", "bin", "python")
+        # Command to run inside the venv (Robust resolution)
+        if sys.platform == "win32":
+            venv_python = os.path.join(".venv", "Scripts", "python.exe")
+        else:
+            venv_python = os.path.join(".venv", "bin", "python")
+
+        # Fallback logic for mismatched environments (e.g. Linux venv on Windows)
         if not os.path.exists(venv_python):
-             venv_python = "python3" # Fallback
+            alt_python = os.path.join(".venv", "bin", "python") if sys.platform == "win32" else os.path.join(".venv", "Scripts", "python.exe")
+            if os.path.exists(alt_python):
+                venv_python = alt_python
+            else:
+                venv_python = sys.executable # Fallback to current runner
 
         cmd = [venv_python, script_path]
         if target:
             cmd.append(target)
+
+        log_file.write(f"EXEC CMD: {' '.join(cmd)}\n")
+        log_file.flush()
 
         try:
             self.process = subprocess.Popen(
@@ -130,7 +142,10 @@ class ProcessManager:
             
             return {"status": "started", "agent": agent_name}
         except Exception as e:
-            return {"error": str(e)}
+            error_msg = f"FAILED TO START AGENT: {str(e)}"
+            log_file.write(f"[ERROR] {error_msg}\n")
+            log_file.flush()
+            return {"error": error_msg}
 
     def stop_agent(self):
         """Terminates the active agent process."""
@@ -416,7 +431,7 @@ def retry_agent():
     return pm.run_agent(info["active_agent"])
 
 @app.post("/scout/promote")
-def promote_issue(issue: Dict = Body(...)):
+def promote_issue(background_tasks: BackgroundTasks, issue: Dict = Body(...)):
     """Promotes a scouted issue with a fix strategy to the Coder agent."""
     repo = issue.get("repo")
     title = issue.get("title")
@@ -425,19 +440,38 @@ def promote_issue(issue: Dict = Body(...)):
     if not repo:
         raise HTTPException(status_code=400, detail="Missing repo in issue data")
     
-    # Store promotion in a directive file for the Coder to pick up
-    directive = {
-        "repo": repo,
-        "title": title,
-        "body": issue.get("body", "No body context provided."),
-        "strategy": strategy,
-        "timestamp": datetime.now().isoformat()
-    }
-    save_json(os.path.join("logs", "mission_parameters.json"), directive)
-    save_json(os.path.join("logs", "current_mission.json"), issue)
-    
-    # Trigger Coder immediately
-    return pm.run_agent("coder", target=repo)
+    try:
+        # Store promotion in a directive file for the Coder to pick up
+        directive = {
+            "mission_id": f"MISSION-{int(time.time())}",
+            "target_repo": issue.get("target_repo") or repo,
+            "title": title,
+            "body": issue.get("body", "No body context provided."),
+            "strategy": strategy,
+            "repro_cmd": issue.get("repro_cmd"),
+            "fix_cmd": issue.get("fix_cmd"),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        mission_params_path = "logs/mission_parameters.json"
+        save_json(mission_params_path, directive)
+        save_json("logs/current_mission.json", issue)
+        
+        # Log promotion
+        with open(os.path.join("logs", "workflow.log"), "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] [API] Issue promoted to Coder: {title[:50]}...\n")
+
+        # Trigger Coder in background to ensure zero UI lag
+        background_tasks.add_task(pm.run_agent, "coder", target=repo)
+        
+        return {"status": "success", "msg": "Mission promoted. Coder initializing."}
+        
+    except Exception as e:
+        error_log = os.path.join("logs", "workflow.log")
+        with open(error_log, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] [CRITICAL] Promotion failed: {str(e)}\n")
+            traceback.print_exc(file=f)
+        raise HTTPException(status_code=500, detail=f"Promotion failed: {str(e)}")
 
 @app.get("/scout/report")
 def get_scout_report():
