@@ -11,6 +11,12 @@ import contextlib
 import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict
+
+# Ensure root is in sys.path (Absolute Priority)
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -28,11 +34,14 @@ SYSTEM_STATE = {
     "active_agent": "None",
     "is_running": False,
     "current_repo": "None",
-    "last_run": None
+    "last_run": None,
+    "provisioned_repos": [] # Local folders in workspace/
 }
 
-# Ensure root is in sys.path so we can import core.health_check
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# --- State Management ---
+REGISTRY_PATH = "core/registry.json"
+APPROVALS_PATH = "logs/approvals.json"
+
 from core.health_check import check_rate_limit
 from core.skill_writer import record_mission_success
 from agents.scout import SurgicalScoutV3
@@ -58,9 +67,8 @@ class ApprovalAction(BaseModel):
     id: str
     action: str # "commit", "draft", "publish"
 
-# --- State Management ---
-REGISTRY_PATH = "core/registry.json"
-APPROVALS_PATH = "logs/approvals.json"
+class ProvisionRequest(BaseModel):
+    target_repo: str # Full HTTPS URL
 
 def load_json(path: str, default: dict) -> dict:
     if os.path.exists(path):
@@ -103,25 +111,20 @@ class ProcessManager:
             log_file.write(f"Target: {target}\n")
         log_file.flush()
 
-        # Command to run inside the venv (Linux-native resolution)
+        # Command to run inside the venv (HARDCODED Linux-native resolution)
         if sys.platform == "win32":
             venv_python = "venv/Scripts/python.exe"
-            # Fallback for .venv if venv doesn't exist
             if not os.path.exists(venv_python):
                 venv_python = ".venv/Scripts/python.exe"
         else:
+            # ENFORCED: Must use venv/bin/python for VPS stability
             venv_python = "venv/bin/python"
-            # Fallback for .venv if venv doesn't exist
             if not os.path.exists(venv_python):
+                # Fallback only to .venv if absolutely necessary
                 venv_python = ".venv/bin/python"
 
-        # Fallback logic for mismatched environments (e.g. Linux venv on Windows)
         if not os.path.exists(venv_python):
-            alt_python = os.path.join(".venv", "bin", "python") if sys.platform == "win32" else os.path.join(".venv", "Scripts", "python.exe")
-            if os.path.exists(alt_python):
-                venv_python = alt_python
-            else:
-                venv_python = sys.executable # Fallback to current runner
+            venv_python = sys.executable # Final fallback
 
         cmd = [venv_python, script_path]
         if target:
@@ -298,6 +301,107 @@ def run_agent(request: AgentRequest):
 def stop_agent():
     """Command Deck Trigger: Terminates active agent."""
     return pm.stop_agent()
+
+# --- Provisioning Logic ---
+def get_provision_folder(url: str) -> str:
+    return url.rstrip("/").split("/")[-1].replace(".git", "")
+
+async def poll_fork_status(fork_url: str, headers: dict) -> bool:
+    """Retries 3 times to ensure the fork is actually provisioned on GitHub."""
+    parts = fork_url.rstrip("/").split("/")
+    owner, repo = parts[-2], parts[-1]
+    api_url = f"https://api.github.com/repos/{owner}/{repo}"
+    
+    for i in range(3):
+        try:
+            res = requests.get(api_url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                return True
+        except:
+            pass
+        await asyncio.sleep(10) # 10s wait between retries
+    return False
+
+@app.post("/repo/provision")
+async def provision_repository(request: ProvisionRequest):
+    """
+    Manual Hub Step: Forks, Branches, and Clones the target repo.
+    Decoupled from Coder Agent for human-in-the-loop control.
+    """
+    url = request.target_repo.strip()
+    if not url.startswith("https://github.com/"):
+        raise HTTPException(status_code=400, detail="Invalid GitHub URL")
+
+    folder = get_provision_folder(url)
+    workspace_path = os.path.join("workspace", folder)
+    
+    # 1. Dirty Workspace Wipe
+    if os.path.exists(workspace_path):
+        shutil.rmtree(workspace_path)
+    
+    token = os.getenv("GITHUB_KEY")
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
+    
+    # 2. Fork
+    parts = url.rstrip("/").split("/")
+    owner, repo_name = parts[-2], parts[-1].replace(".git", "")
+    fork_api_url = f"https://api.github.com/repos/{owner}/{repo_name}/forks"
+    
+    try:
+        res = requests.post(fork_api_url, headers=headers, timeout=30)
+        if res.status_code not in [201, 202]:
+            raise HTTPException(status_code=500, detail=f"Fork failed: {res.status_code} - {res.text}")
+        
+        fork_data = res.json()
+        fork_url = fork_data.get("html_url")
+        fork_owner = fork_data.get("owner", {}).get("login")
+        
+        # 3. Polling Guard
+        if not await poll_fork_status(fork_url, headers):
+             raise HTTPException(status_code=500, detail="Fork provision timed out on GitHub.")
+
+        # 4. Create Branch 'auto-tensor-dev'
+        repo_info = requests.get(f"https://api.github.com/repos/{fork_owner}/{repo_name}", headers=headers).json()
+        default_branch = repo_info.get("default_branch", "main")
+        
+        ref_url = f"https://api.github.com/repos/{fork_owner}/{repo_name}/git/refs/heads/{default_branch}"
+        ref_res = requests.get(ref_url, headers=headers).json()
+        base_sha = ref_res.get("object", {}).get("sha")
+        
+        if not base_sha:
+            raise HTTPException(status_code=500, detail=f"Could not find SHA for {default_branch} on fork.")
+
+        branch_name = "auto-tensor-dev"
+        create_br_url = f"https://api.github.com/repos/{fork_owner}/{repo_name}/git/refs"
+        br_res = requests.post(create_br_url, headers=headers, json={"ref": f"refs/heads/{branch_name}", "sha": base_sha})
+        # 201 Created or 422 Unprocessable if branch exists
+        if br_res.status_code not in [201, 422]:
+            raise HTTPException(status_code=500, detail=f"Branch creation failed: {br_res.text}")
+
+        # 5. Clone fork's branch
+        auth_clone_url = fork_url.replace("https://github.com/", f"https://{token}@github.com/")
+        os.makedirs("workspace", exist_ok=True)
+        subprocess.run(["git", "clone", "-b", branch_name, auth_clone_url, workspace_path], check=True, capture_output=True)
+        
+        # 6. Update State & Persistence
+        global SYSTEM_STATE
+        if folder not in SYSTEM_STATE["provisioned_repos"]:
+            SYSTEM_STATE["provisioned_repos"].append(folder)
+            
+        registry = load_json(REGISTRY_PATH, {"repos": []})
+        for r in registry["repos"]:
+            if r["html_url"] == url:
+                r["provisioned"] = True
+                r["provisioned_at"] = datetime.now().isoformat()
+        save_json(REGISTRY_PATH, registry)
+        
+        return {"status": "success", "folder": folder, "branch": branch_name}
+
+    except subprocess.CalledProcessError as e:
+        clean_err = e.stderr.decode().replace(token, "****") if token else e.stderr.decode()
+        raise HTTPException(status_code=500, detail=f"Clone failed: {clean_err}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Provisioning error: {str(e)}")
 
 # --- Repo Management ---
 @app.get("/repos")

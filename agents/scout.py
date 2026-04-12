@@ -136,6 +136,7 @@ class SurgicalScoutV3:
             f"Propose a concise, surgical fix strategy for each of the following GitHub issues.\n\n"
             f"{issues_text}\n"
             "Return your analysis as a structured JSON object with a 'results' key containing an array of objects. "
+            "IMPORTANT: JSON Strings must not contain unescaped newlines. Use \\n for line breaks.\n\n"
             "Each object MUST use these exact keys:\n"
             "- 'id' (integer from the input)\n"
             "- 'target_repo' (the full GitHub HTTPS URL for the repository)\n"
@@ -146,6 +147,65 @@ class SurgicalScoutV3:
             "Be direct, technically precise, and bored. "
             "Return ONLY the JSON object. No preamble."
         )
+
+    def _get_individual_prompt(self, target: Dict) -> str:
+        """Generates a prompt for a single target for fallback analysis."""
+        return self._get_batch_prompt([target])
+
+    def _repair_json(self, json_str: str) -> str:
+        """Simple repair for common LLM truncation or escaping errors."""
+        json_str = json_str.strip()
+        if not json_str.startswith("{"):
+            json_str = "{" + json_str
+        
+        # Handle unterminated strings
+        if json_str.count('"') % 2 != 0:
+            json_str += '"'
+            
+        # Balance braces
+        open_braces = json_str.count("{")
+        close_braces = json_str.count("}")
+        if open_braces > close_braces:
+            json_str += "}" * (open_braces - close_braces)
+        return json_str
+
+    def _sequential_blueprint(self, targets: List[Dict]):
+        """Fall-over logic: Processes each target individually if batch fails."""
+        from core.llm import LlmClient
+        llm = LlmClient()
+        
+        print(f"[Bored Scout]: ENTERING SEQUENTIAL FALLBACK (Processing {len(targets)} targets individually)...")
+        sys.stdout.flush()
+        
+        for target in targets:
+            print(f"  Analysing {target['id']}...")
+            sys.stdout.flush()
+            try:
+                raw = llm.generate(self._get_individual_prompt(target))
+                clean = raw.strip().strip("```json").strip("```").strip()
+                clean = self._repair_json(clean)
+                data = json.loads(clean)
+                
+                # Extract the first result (should only be one)
+                results = data.get("results", [])
+                if results:
+                    res = results[0]
+                    target["strategy"] = res.get("strategy", "No strategy generated.")
+                    target["target_repo"] = res.get("target_repo", target.get("target_repo"))
+                    target["repro_cmd"] = res.get("repro_cmd", "ls -R")
+                    target["fix_cmd"] = res.get("fix_cmd", "ls -R")
+                    target["surgical_files"] = res.get("surgical_files", [])
+                    print(f"    Success for {target['id']}.")
+                else:
+                    raise Exception("Empty result in individual fallback")
+            except Exception as e:
+                print(f"    Fallback failed for {target['id']}: {e}")
+                target["strategy"] = "Strategist Offline: All failover attempts exhausted."
+                target["target_repo"] = target.get("target_repo") or f"https://github.com/{target['repo']}"
+                target["repro_cmd"] = "ls -R # Missing"
+                target["fix_cmd"] = "ls -R # Missing"
+                target["surgical_files"] = []
+            sys.stdout.flush()
 
     def scan(self, target_repo: str = None):
         print(f"[Bored Scout]: Target acquired -> {target_repo or 'Watchlist'}")
@@ -235,12 +295,8 @@ class SurgicalScoutV3:
         except Exception as e:
             print(f"[Bored Scout]: Batch Analysis failure: {e}")
             sys.stdout.flush()
-            for target in top_n:
-                target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
-                target["target_repo"] = target.get("target_repo") or f"https://github.com/{target['repo']}"
-                target["repro_cmd"] = "ls -R # Missing"
-                target["fix_cmd"] = "ls -R # Missing"
-                target["surgical_files"] = []
+            # Engaging Sequential Fallback
+            self._sequential_blueprint(top_n)
             
         report = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -302,6 +358,7 @@ class SurgicalScoutV3:
                 raise Exception(raw_response)
 
             clean_json = raw_response.strip().strip("```json").strip("```").strip()
+            clean_json = self._repair_json(clean_json)
             batch_data = json.loads(clean_json)
             results_map = {res["id"]: res for res in batch_data.get("results", [])}
             
@@ -324,6 +381,12 @@ class SurgicalScoutV3:
         except Exception as e:
             print(f"[Bored Scout]: Batch Refinement failure: {e}")
             sys.stdout.flush()
+            # Engaging Sequential Fallback for refinement
+            self._sequential_blueprint(targets_to_refine)
+            # Re-save report after fallback
+            data["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            with open(report_path, "w") as f:
+                json.dump(data, f, indent=2)
             
         return data
 
