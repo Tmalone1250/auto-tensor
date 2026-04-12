@@ -51,11 +51,41 @@ def sanitize_workspace_path(path: str) -> str:
 # WSL Executor
 # ---------------------------------------------------------------------------
 
+def run_bootstrap(cwd: str, marker: str) -> None:
+    """Detects and installs dependencies for the target workspace."""
+    if not cwd or not os.path.exists(cwd):
+        return
+
+    # 1. Python (pyproject.toml or requirements.txt)
+    if os.path.exists(os.path.join(cwd, "pyproject.toml")) or os.path.exists(os.path.join(cwd, "requirements.txt")):
+        cmd = "python3 -m pip install -e . || python3 -m pip install -r requirements.txt"
+        logging.info(f"{marker} BOOTSTRAP: Detected Python. Installing deps...")
+        print(f"[EXECUTOR] {marker} > BOOTSTRAP (Python) -> {cmd}")
+        subprocess.run(["bash", "-c", f'cd "{cwd}" && {cmd}'], capture_output=True)
+        return
+
+    # 2. Node.js (package.json)
+    if os.path.exists(os.path.join(cwd, "package.json")):
+        cmd = "npm install"
+        logging.info(f"{marker} BOOTSTRAP: Detected Node.js. Running npm install...")
+        print(f"[EXECUTOR] {marker} > BOOTSTRAP (Node.js) -> {cmd}")
+        subprocess.run(["bash", "-c", f'cd "{cwd}" && {cmd}'], capture_output=True)
+        return
+
+    # 3. Rust (Cargo.toml)
+    if os.path.exists(os.path.join(cwd, "Cargo.toml")):
+        cmd = "cargo build"
+        logging.info(f"{marker} BOOTSTRAP: Detected Rust. Running cargo build...")
+        print(f"[EXECUTOR] {marker} > BOOTSTRAP (Rust) -> {cmd}")
+        subprocess.run(["bash", "-c", f'cd "{cwd}" && {cmd}'], capture_output=True)
+        return
+
 def run_wsl(
     command: str,
     cwd: Optional[str] = None,
     capture: bool = True,
     timeout: int = 300,
+    bootstrap: bool = True
 ) -> subprocess.CompletedProcess:
     """
     Execute a shell command inside WSL bash.
@@ -85,6 +115,10 @@ def run_wsl(
     else:
         shell_args = ["wsl", "bash", "-c", full_command]
         marker = "WSL"
+
+    # 3. Dynamic Bootstrap (Only once per mission if possible, or per start)
+    if bootstrap and cwd:
+        run_bootstrap(cwd, marker)
 
     logging.info(f"{marker} EXEC: {full_command}")
     print(f"[EXECUTOR] {marker} > {full_command}")
