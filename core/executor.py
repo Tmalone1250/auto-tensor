@@ -103,10 +103,13 @@ def run_wsl(
     is_linux = platform.system() == "Linux"
     shell_cwd = win_to_wsl(cwd) if (cwd and not is_linux) else cwd
 
+    # 1b. TTY Spoofing: Force narrow columns for TUI reproduction
+    tty_suffix = "export COLUMNS=40; export LINES=24; "
+    
     if shell_cwd:
-        full_command = f'cd "{shell_cwd}" && {command}'
+        full_command = f'cd "{shell_cwd}" && {tty_suffix}{command}'
     else:
-        full_command = command
+        full_command = f"{tty_suffix}{command}"
 
     # 2. Command Prefixing
     if is_linux:

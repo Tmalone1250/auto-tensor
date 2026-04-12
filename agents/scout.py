@@ -228,6 +228,15 @@ class SurgicalScoutV3:
             sys.stdout.flush()
 
     def scan(self, target_repo: str = None):
+        # 0. Mission Purge: Self-Cleaning logic to prevent state leakage
+        param_path = "logs/mission_parameters.json"
+        if os.path.exists(param_path):
+            try:
+                os.remove(param_path)
+                print(f"[Bored Scout]: Mission Purge active. Stale parameters cleared.")
+            except Exception as e:
+                print(f"[Bored Scout]: Mission Purge failed: {e}")
+        
         print(f"[Bored Scout]: Target acquired -> {target_repo or 'Watchlist'}")
         sys.stdout.flush()
         all_results = []
