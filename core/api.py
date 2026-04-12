@@ -105,9 +105,15 @@ class ProcessManager:
 
         # Command to run inside the venv (Linux-native resolution)
         if sys.platform == "win32":
-            venv_python = ".venv/Scripts/python.exe"
+            venv_python = "venv/Scripts/python.exe"
+            # Fallback for .venv if venv doesn't exist
+            if not os.path.exists(venv_python):
+                venv_python = ".venv/Scripts/python.exe"
         else:
-            venv_python = ".venv/bin/python"
+            venv_python = "venv/bin/python"
+            # Fallback for .venv if venv doesn't exist
+            if not os.path.exists(venv_python):
+                venv_python = ".venv/bin/python"
 
         # Fallback logic for mismatched environments (e.g. Linux venv on Windows)
         if not os.path.exists(venv_python):
@@ -143,7 +149,8 @@ class ProcessManager:
             return {"status": "started", "agent": agent_name}
         except Exception as e:
             error_msg = f"FAILED TO START AGENT: {str(e)}"
-            log_file.write(f"[ERROR] {error_msg}\n")
+            log_file.write(f"[CRITICAL] {error_msg}\n")
+            log_file.write(traceback.format_exc())
             log_file.flush()
             return {"error": error_msg}
 

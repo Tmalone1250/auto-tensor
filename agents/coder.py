@@ -8,9 +8,30 @@ import sys
 import json
 import logging
 import time
-import requests
+
+# --- Logging Booster (Priority 1) ---
+LOG_DIR = "logs"
+MAIN_LOG = f"{LOG_DIR}/coder.log"
+MISSION_PARAMS = f"{LOG_DIR}/mission_parameters.json"
+
+os.makedirs(LOG_DIR, exist_ok=True)
+logging.basicConfig(
+    filename=MAIN_LOG,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
+try:
+    import requests
+except ImportError:
+    print("Error: 'requests' library missing. Run 'uv pip install requests'.")
+    logging.error("Dependency Error: 'requests' library missing.")
+    sys.exit(1)
+
 from datetime import datetime
 from typing import Dict, Any, Optional
+from dotenv import load_dotenv
+load_dotenv()
 
 # Ensure project root is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,10 +39,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.health_check import governor_gate
 from core.executor import run_wsl_in_workspace
 from core.llm import LlmClient
-# --- Configuration ---
-LOG_DIR = "logs"
-MAIN_LOG = f"{LOG_DIR}/coder.log"
-MISSION_PARAMS = f"{LOG_DIR}/mission_parameters.json"
 
 import argparse
 
@@ -203,13 +220,7 @@ def ensure_repo_locally(target_repo: str, mission_id: str) -> str:
 
 def execute_mission():
     """Main lifecycle for Directive-Driven Orchestration."""
-    # Move logging initialization to the very first line of mission
-    os.makedirs(LOG_DIR, exist_ok=True)
-    logging.basicConfig(
-        filename=MAIN_LOG,
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
+    # (Logging already initialized at module top)
     
     parser = argparse.ArgumentParser(description="Auto-Tensor Coder Agent")
     parser.add_argument("--force", action="store_true", help="Bypass Governor safety gates")
