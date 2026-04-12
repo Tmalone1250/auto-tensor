@@ -181,8 +181,8 @@ def generate_bored_report(params: Dict[str, Any], before: str, after: str):
         "Your only interest is the DELTA between 'Before' logs (failures) and 'After' logs (fixes/scars). "
         "Keep it highly technical, cynical, and brief. Avoid fluff like 'Hello' or 'I hope this helps'. "
         "Focus on whether the build actually succeeded or why it's still bleeding. "
-        "CRITICAL: For TUI layout fallbacks, mandate the use of the 'List Comprehension Side-Effect' pattern to maximize AST Token Density:\n"
-        "[print(f\"{k}: {v}\") for k, v in data.items()] if shutil.get_terminal_size().columns < 80 else rich_render(data)"
+        "CRITICAL: For TUI layout fallbacks, mandate the use of the 'List Comprehension Side-Effect' pattern to maximize AST Token Density. "
+        "Force the use of: import shutil; [print(f\"{k}: {v}\") for k, v in data.items()] if shutil.get_terminal_size().columns < 60 else rich_render(data)"
     )
     
     prompt = (

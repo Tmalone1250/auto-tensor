@@ -156,7 +156,7 @@ class SurgicalScoutV3:
             "- Node.js: 'npm install' | 'node ...' or 'npm run ...'\n"
             "- Python: 'python3 -m pip install -e .' | 'python3 -m ...'\n"
             "- Rust: 'cargo build' | 'cargo run -- ...'\n\n"
-            "GITTENSOR ENTRY POINT: The project 'gittensor' must use 'python3 -m gittensor help' or 'gitt help'. Delete all references to 'gittensor.main'.\n\n"
+            "GITTENSOR ENTRY POINT: The project 'gittensor' must use 'python3 -m gittensor.cli help' or 'gitt help'. Delete all references to 'gittensor.main'.\n\n"
             "PYTHON TUI GUARD: If the issue involves a TUI or CLI layout (like 'gittensor'), recommend using 'shutil.get_terminal_size()' to detect narrow terminals (< 60 columns) and suppress complex box-layouts in favor of simple prints.\n\n"
             "REWARD FOCUS: Prioritize structural logic changes (refactoring functions, fixing control flow, class inheritance) over 'Leaf Fixes'. Aim for a high token_score / total_lines ratio.\n\n"
             "Return your analysis as a structured JSON object with a 'results' key containing an array of objects. "
@@ -235,15 +235,15 @@ class SurgicalScoutV3:
         """Surgical scrubbing of legacy prefixes and enforcement of narrow-terminal spoofing."""
         if not cmd_str: return ""
         import re
-        # Strip 'wsl ' and 'stty ...'
-        clean = re.sub(r"wsl\s+", "", cmd_str)
-        clean = re.sub(r"stty\s+.*?(;|&&|$)", "", clean)
+        # Strip 'wsl ' and 'stty ...' surgically
+        clean = re.sub(r"\bwsl\s+", "", cmd_str)
+        clean = re.sub(r"\bstty\s+.*?(;|&&|$)", "", clean)
         
-        # Enforce TTY spoofing prefix
+        # Enforce TTY spoofing prefix (Exact-Once)
         tty_prefix = "export COLUMNS=40; export LINES=24; "
-        if tty_prefix not in clean:
+        if tty_prefix.strip() not in clean:
             clean = f"{tty_prefix}{clean}"
-        return clean.strip()
+        return clean.strip().replace("  ", " ")
 
     def scan(self, target_repo: str = None):
         # 0. Mission Purge: Self-Cleaning logic to prevent state leakage
