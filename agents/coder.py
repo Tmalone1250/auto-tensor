@@ -179,7 +179,8 @@ def generate_bored_report(params: Dict[str, Any], before: str, after: str):
         f"STRATEGY: {strategy}\n\n"
         f"--- BEFORE LOG (FAIL) ---\n{before[-1500:]}\n\n"
         f"--- AFTER LOG (RESULT) ---\n{after[-1500:]}\n\n"
-        f"Task: Review the delta and provide a closing remark on the mission success."
+        "Task: Review the delta and provide a closing remark. "
+        "CRITICAL: Ensure the fix maximizes AST Token Density. Prioritize structural nodes (functions, classes, control flow) over literals. Keep the line count minimal."
     )
 
     report = llm.generate(prompt, system_override=system_prompt)

@@ -18,6 +18,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
+from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from core.terminal import PtyManager
@@ -327,11 +328,20 @@ async def poll_fork_status(fork_url: str, headers: dict) -> bool:
 async def run_provision_logic(url: str, folder: str, workspace_path: str):
     """
     Background worker for infrastructure setup.
-    Hardened with traceback logging and path safety.
+    Hardened with localized logging and permission guards.
     """
-    token = os.getenv("GITHUB_KEY")
+    import logging
     log_path = os.path.join("logs", "workflow.log")
     os.makedirs("logs", exist_ok=True)
+    
+    # Priority 1: Move logging init to top of background task
+    logging.basicConfig(
+        filename=log_path,
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    
+    token = os.getenv("GITHUB_KEY")
     
     try:
         # 1. Robust URL Parsing (Redundant but safe for background context)
@@ -351,6 +361,12 @@ async def run_provision_logic(url: str, folder: str, workspace_path: str):
         # 4. Fork
         fork_api_url = f"https://api.github.com/repos/{owner}/{repo_name}/forks"
         res = requests.post(fork_api_url, headers=headers, timeout=30)
+        
+        # Priority: Specific Permission Denied Logging
+        if res.status_code in [401, 403]:
+             logging.error(f"[PERMISSION DENIED] GitHub API failed for {url}. Status: {res.status_code}")
+             raise Exception(f"PERMISSION DENIED: Check GITHUB_KEY. ({res.status_code})")
+             
         if res.status_code not in [201, 202]:
             raise Exception(f"Fork failed: {res.status_code} - {res.text}")
 
@@ -737,6 +753,10 @@ async def terminal_ws(
             await websocket.send_bytes(chunk)
             
         while True:
+            # Priority: Connectivity Guard
+            if websocket.client_state != WebSocketState.CONNECTED:
+                break
+                
             message = await websocket.receive()
             if "bytes" in message and message["bytes"]:
                 session.pty.write(message["bytes"])

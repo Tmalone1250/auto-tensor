@@ -94,17 +94,20 @@ class SurgicalScoutV3:
         if comments > 10:
             score -= 1
             
-        # Priority labels
+        # Priority labels (Structural Focus v2.4)
         labels = [l["name"].lower() for l in issue.get("labels", [])]
-        if "performance" in labels:
-            score += 2
-        if "bug" in labels:
-            score += 1
+        structural_labels = ["performance", "logic", "refactor", "bug"]
+        for label in labels:
+            if label in structural_labels:
+                score += 2
             
         # Bounty Hunter v2.4: Maintainer Multiplier (1.66x)
         maintainer_roles = ["OWNER", "MEMBER", "COLLABORATOR"]
         if author_assoc in maintainer_roles:
             score = int(score * 1.66)
+            issue["multiplier"] = 1.66
+        else:
+            issue["multiplier"] = 1.0
             
         return min(10, max(1, score))
 
@@ -244,6 +247,7 @@ class SurgicalScoutV3:
                     "repo": repo,
                     "target_repo": f"https://github.com/{repo}",
                     "delta_score": delta_score,
+                    "multiplier": issue.get("multiplier", 1.0),
                     "category": category
                 })
         
