@@ -88,14 +88,15 @@ def get_repo_folder(target_repo: str) -> str:
     # Remove .git and trailing slashes
     clean = target_repo.rstrip("/").replace(".git", "")
     if "/" in clean:
-        return clean.split("/")[-1]
-    return clean
+        return clean.split("/")[-1].lower()
+    return clean.lower()
 
 def execute_mission():
     """Main lifecycle for Directive-Driven Orchestration."""
     # (Logging already initialized at module top)
     
     parser = argparse.ArgumentParser(description="Auto-Tensor Coder Agent")
+    parser.add_argument("repo", nargs="?", help="Target repository URL or folder name")
     parser.add_argument("--force", action="store_true", help="Bypass Governor safety gates")
     args = parser.parse_args()
     
@@ -120,8 +121,13 @@ def execute_mission():
         return
 
     mission_id = params.get("mission_id", "UNTITLED")
-    target_repo_raw = params.get("target_repo") or params.get("repo")
+    target_repo_raw = params.get("target_repo") or params.get("repo") or args.repo
     strategy = params.get("strategy")
+    
+    # v2.4 Multiplier Handshake
+    multiplier = params.get("bounty_multiplier", 1.0)
+    if multiplier > 1.0:
+        log_and_print(f"GITTENSOR BOUNTY DETECTED: {multiplier}x Reward Potential", "info")
     
     # 1. Environment Check (FAIL FAST)
     repo_folder = get_repo_folder(target_repo_raw)
