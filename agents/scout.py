@@ -1,4 +1,5 @@
 import os
+import subprocess
 from dotenv import load_dotenv
 load_dotenv()
 import sys
@@ -467,6 +468,7 @@ class SurgicalScoutV3:
         workspace_base = os.path.join(os.getcwd(), "workspace")
         repo_path = os.path.join(workspace_base, repo_folder)
         
+        os.makedirs("logs", exist_ok=True)
         if not os.path.exists(repo_path):
              return {"status": "error", "msg": f"Workspace folder {repo_folder} not found."}
 
@@ -510,30 +512,40 @@ class SurgicalScoutV3:
             "status": "VERIFIED" if verified_entry else "UNCERTAIN"
         }
 
+        # Ensure parameters exist before locking (Initialize if purged)
+        params = {}
         if os.path.exists(MISSION_PARAMS):
             try:
                 with open(MISSION_PARAMS, "r") as f:
                     params = json.load(f)
-                
-                # Update calls with absolute verified module if it's Python
-                if verified_entry and verified_entry.endswith(".py"):
-                    module_name = verified_entry.replace(".py", "").replace("/", ".")
-                    if module_name == "__main__":
-                        module_name = repo_folder
-                    
-                    # Update repro/fix commands if they used the generic entry
-                    params["repro_cmd"] = params["repro_cmd"].replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
-                    params["fix_cmd"] = params["fix_cmd"].replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
-                
-                params["grounding"] = grounding_data
-                # Preserve/Verify Bounty (already in params, just re-stamping for audit)
-                params["bounty_multiplier"] = params.get("bounty_multiplier", 1.0)
-                
-                with open(MISSION_PARAMS, "w") as f:
-                    json.dump(params, f, indent=2)
-                print(f"[Bored Scout]: GROUNDING SUCCESS. Parameters locked.")
-            except Exception as e:
-                print(f"  Grounding sync failed: {e}")
+            except:
+                pass
+        
+        # Identity and Meta-Data pinning
+        params["mission_id"] = params.get("mission_id", f"AUDIT_{time.strftime('%H%M%S')}")
+        params["target_repo"] = params.get("target_repo", repo_folder)
+        
+        # Update calls with absolute verified module if it's Python
+        if verified_entry and verified_entry.endswith(".py"):
+            module_name = verified_entry.replace(".py", "").replace("/", ".")
+            if module_name == "__main__":
+                module_name = repo_folder
+            
+            # Update repro/fix commands if they used the generic entry
+            current_repro = params.get("repro_cmd", "ls -R")
+            current_fix = params.get("fix_cmd", "ls -R")
+            params["repro_cmd"] = current_repro.replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
+            params["fix_cmd"] = current_fix.replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
+        
+        params["grounding"] = grounding_data
+        params["bounty_multiplier"] = params.get("bounty_multiplier", 1.0)
+        
+        try:
+            with open(MISSION_PARAMS, "w") as f:
+                json.dump(params, f, indent=2)
+            print(f"[Bored Scout]: GROUNDING SUCCESS. Parameters locked.")
+        except Exception as e:
+            print(f"  Grounding sync failed: {e}")
         
         return grounding_data
 
