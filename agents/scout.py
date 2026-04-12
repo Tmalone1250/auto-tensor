@@ -156,6 +156,7 @@ class SurgicalScoutV3:
             "- Node.js: 'npm install' | 'node ...' or 'npm run ...'\n"
             "- Python: 'python3 -m pip install -e .' | 'python3 -m ...'\n"
             "- Rust: 'cargo build' | 'cargo run -- ...'\n\n"
+            "GITTENSOR ENTRY POINT: The project 'gittensor' must use 'python3 -m gittensor help' or 'gitt help'. Delete all references to 'gittensor.main'.\n\n"
             "PYTHON TUI GUARD: If the issue involves a TUI or CLI layout (like 'gittensor'), recommend using 'shutil.get_terminal_size()' to detect narrow terminals (< 60 columns) and suppress complex box-layouts in favor of simple prints.\n\n"
             "REWARD FOCUS: Prioritize structural logic changes (refactoring functions, fixing control flow, class inheritance) over 'Leaf Fixes'. Aim for a high token_score / total_lines ratio.\n\n"
             "Return your analysis as a structured JSON object with a 'results' key containing an array of objects. "
@@ -246,9 +247,10 @@ class SurgicalScoutV3:
 
     def scan(self, target_repo: str = None):
         # 0. Mission Purge: Self-Cleaning logic to prevent state leakage
-        if os.path.exists(MISSION_PARAMS):
+        param_path = "logs/mission_parameters.json"
+        if os.path.exists(param_path):
             try:
-                os.remove(MISSION_PARAMS)
+                os.remove(param_path)
                 print(f"[Bored Scout]: Mission Purge active. Stale parameters cleared.")
             except Exception as e:
                 print(f"[Bored Scout]: Mission Purge failed: {e}")

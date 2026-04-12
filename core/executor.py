@@ -103,15 +103,21 @@ def run_wsl(
     is_linux = platform.system() == "Linux"
     shell_cwd = win_to_wsl(cwd) if (cwd and not is_linux) else cwd
 
-    # 1b. TTY Spoofing & Command Scrubbing
+    # 1b. TTY Spoofing & Command Scrubbing (Exact-Once Enforcement)
     tty_suffix = "export COLUMNS=40; export LINES=24; "
     # Final interceptor to strip legacy prefixes
     command = command.replace("wsl ", "").replace("stty ", "true #")
     
-    if shell_cwd:
-        full_command = f'cd "{shell_cwd}" && {tty_suffix}{command}'
+    if tty_suffix.strip() in command:
+        # Already spoofed, just use the command as-is
+        processed_cmd = command
     else:
-        full_command = f"{tty_suffix}{command}"
+        processed_cmd = f"{tty_suffix}{command}"
+
+    if shell_cwd:
+        full_command = f'cd "{shell_cwd}" && {processed_cmd}'
+    else:
+        full_command = processed_cmd
 
     # 2. Command Prefixing
     if is_linux:
