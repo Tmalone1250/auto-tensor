@@ -51,6 +51,7 @@ APPROVALS_PATH = "logs/approvals.json"
 from core.health_check import check_rate_limit
 from core.skill_writer import record_mission_success
 from agents.scout import SurgicalScoutV3
+from agents.memory_helper import ReflectionEngine
 
 app = FastAPI(title="Auto-Tensor Command Bridge")
 
@@ -541,7 +542,16 @@ def verify_repository(request: VerifyRequest):
             global SYSTEM_STATE
             if repo_folder not in SYSTEM_STATE["verified_repos"]:
                 SYSTEM_STATE["verified_repos"].append(repo_folder)
-            return {"status": "success", "msg": "Grounding verified.", "data": result}
+            
+            # LTM: Lock in verified paths
+            memory = ReflectionEngine()
+            memory.update_skill(repo_folder, {
+                "entry_point": result.get("entry_point"),
+                "multiplier": 1.66,
+                "strategy": "Disk-verified entry point Grounding 2.5 Audit"
+            }, agent="scout")
+            
+            return {"status": "success", "msg": "Grounding verified and locked to Memory.", "data": result}
         else:
             return {"status": "uncertain", "msg": "Grounding uncertain. Entry point MIA.", "data": result}
             

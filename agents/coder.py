@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.health_check import governor_gate
 from core.executor import run_wsl_in_workspace
 from core.llm import LlmClient
+from agents.memory_helper import ReflectionEngine
 
 import argparse
 
@@ -143,6 +144,9 @@ def execute_mission():
     log_and_print(f"IDENTITY PINNED: {os.getenv('GITHUB_USER', 'Tmalone1250')}")
     log_and_print(f"PROGRESS: [Environment Check] PASSED - Workspace: {workspace_path}")
 
+    # LTM Initialization
+    memory = ReflectionEngine()
+
     # Resilient command extraction with defaults
     repro_cmd = params.get("repro_cmd")
     fix_cmd = params.get("fix_cmd")
@@ -160,11 +164,16 @@ def execute_mission():
     log_and_print(f"STRATEGY: {strategy}")
 
     # 1. Reproduce BEFORE
-    # Note: We now use the 'auto-tensor-dev' branch set up during provisioning
     before_log = run_step(mission_id, repo_folder, repro_cmd, "BEFORE")
     
     # 2. Execute FIX
     after_log = run_step(mission_id, repo_folder, fix_cmd, "AFTER")
+    
+    # Negative Learning Hook: Record patterns on failure
+    if "FAILED" in before_log or "FAILED" in after_log:
+        error_signal = before_log if "FAILED" in before_log else after_log
+        memory.record_forbidden_pattern(error_signal[-500:], agent="coder")
+        log_and_print("Negative Reflection triggered. Forbidden pattern recorded.")
 
     # 3. Final Bored Review
     generate_bored_report(params, before_log, after_log)
@@ -176,13 +185,19 @@ def generate_bored_report(params: Dict[str, Any], before: str, after: str):
     mission_id = params.get("mission_id")
     strategy = params.get("strategy")
     
+    # LTM Loader
+    instr_path = os.path.join(os.path.dirname(__file__), "instructions", "instructions_coder.md")
+    custom_instr = ""
+    if os.path.exists(instr_path):
+        with open(instr_path, "r", encoding="utf-8") as f:
+            custom_instr = f.read()
+
     system_prompt = (
+        f"IDENTITY: Tmalone1250 | AST DENSITY MANDATE.\n{custom_instr}\n\n"
         "You are a senior systems engineer and an Elite, Bored Contributor. "
         "Your only interest is the DELTA between 'Before' logs (failures) and 'After' logs (fixes/scars). "
         "Keep it highly technical, cynical, and brief. Avoid fluff like 'Hello' or 'I hope this helps'. "
         "Focus on whether the build actually succeeded or why it's still bleeding. "
-        "CRITICAL: For TUI layout fallbacks, mandate the use of the 'List Comprehension Side-Effect' pattern to maximize AST Token Density. "
-        "Force the use of: import shutil; [print(f\"{k}: {v}\") for k, v in data.items()] if shutil.get_terminal_size().columns < 60 else rich_render(data)"
     )
     
     prompt = (
