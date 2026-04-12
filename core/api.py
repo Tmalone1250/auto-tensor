@@ -68,7 +68,8 @@ class ApprovalAction(BaseModel):
     action: str # "commit", "draft", "publish"
 
 class ProvisionRequest(BaseModel):
-    target_repo: str # Full HTTPS URL
+    target_repo: Optional[str] = None # Full HTTPS URL
+    url: Optional[str] = None # Fallback key
 
 def load_json(path: str, default: dict) -> dict:
     if os.path.exists(path):
@@ -326,42 +327,60 @@ async def poll_fork_status(fork_url: str, headers: dict) -> bool:
 @app.post("/repo/provision")
 async def provision_repository(request: ProvisionRequest):
     """
-    Manual Hub Step: Forks, Branches, and Clones the target repo.
-    Decoupled from Coder Agent for human-in-the-loop control.
+    Hardened Manual Hub Step: Forks, Branches, and Clones the target repo.
+    Includes case-insensitive pathing, disk safety, and descriptive error reporting.
     """
-    url = request.target_repo.strip()
-    if not url.startswith("https://github.com/"):
-        raise HTTPException(status_code=400, detail="Invalid GitHub URL")
-
-    folder = get_provision_folder(url)
-    workspace_path = os.path.join("workspace", folder)
-    
-    # 1. Dirty Workspace Wipe
-    if os.path.exists(workspace_path):
-        shutil.rmtree(workspace_path)
-    
     token = os.getenv("GITHUB_KEY")
-    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
-    
-    # 2. Fork
-    parts = url.rstrip("/").split("/")
-    owner, repo_name = parts[-2], parts[-1].replace(".git", "")
-    fork_api_url = f"https://api.github.com/repos/{owner}/{repo_name}/forks"
-    
     try:
+        # 1. Payload Validation
+        url = (request.target_repo or request.url or "").strip()
+        if not url or not url.startswith("https://github.com/"):
+            raise HTTPException(status_code=400, detail="Invalid GitHub URL format.")
+
+        # 2. Robust URL Parsing
+        try:
+            parts = url.rstrip("/").split("/")
+            owner, repo_name = parts[-2], parts[-1].replace(".git", "")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid GitHub URL format (could not parse owner/repo).")
+
+        # 3. Case-Insensitive Folder Mapping
+        folder = repo_name.lower()
+        workspace_path = os.path.join("workspace", folder)
+        
+        # 4. Disk Safety Sandbox
+        # Only allow rmtree inside workspace/ folder
+        normalized_path = os.path.abspath(workspace_path)
+        workspace_root = os.path.abspath("workspace")
+        if not normalized_path.startswith(workspace_root) or folder == "":
+             raise HTTPException(status_code=403, detail="Disk Safety Violation: Invalid workspace target.")
+
+        if os.path.exists(workspace_path):
+            shutil.rmtree(workspace_path)
+        
+        # 5. Token Guard
+        if not token:
+            raise HTTPException(status_code=500, detail="CRITICAL: GITHUB_KEY missing in environment.")
+            
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
+        
+        # 6. Fork with API Resilience
+        fork_api_url = f"https://api.github.com/repos/{owner}/{repo_name}/forks"
         res = requests.post(fork_api_url, headers=headers, timeout=30)
+        
         if res.status_code not in [201, 202]:
-            raise HTTPException(status_code=500, detail=f"Fork failed: {res.status_code} - {res.text}")
+            error_detail = res.json().get("message", "Unknown GitHub Error")
+            raise HTTPException(status_code=res.status_code, detail=f"GitHub Fork Failed: {error_detail}")
         
         fork_data = res.json()
         fork_url = fork_data.get("html_url")
         fork_owner = fork_data.get("owner", {}).get("login")
         
-        # 3. Polling Guard
+        # 7. Preserved Polling Guard
         if not await poll_fork_status(fork_url, headers):
-             raise HTTPException(status_code=500, detail="Fork provision timed out on GitHub.")
+             raise HTTPException(status_code=500, detail="GitHub Fork provision timed out (disk setup took >30s).")
 
-        # 4. Create Branch 'auto-tensor-dev'
+        # 8. Branch Creation (Standardized auto-tensor-dev)
         repo_info = requests.get(f"https://api.github.com/repos/{fork_owner}/{repo_name}", headers=headers).json()
         default_branch = repo_info.get("default_branch", "main")
         
@@ -370,39 +389,54 @@ async def provision_repository(request: ProvisionRequest):
         base_sha = ref_res.get("object", {}).get("sha")
         
         if not base_sha:
-            raise HTTPException(status_code=500, detail=f"Could not find SHA for {default_branch} on fork.")
+            raise HTTPException(status_code=500, detail=f"Could not locate base SHA for {default_branch} on forked repo.")
 
         branch_name = "auto-tensor-dev"
         create_br_url = f"https://api.github.com/repos/{fork_owner}/{repo_name}/git/refs"
         br_res = requests.post(create_br_url, headers=headers, json={"ref": f"refs/heads/{branch_name}", "sha": base_sha})
-        # 201 Created or 422 Unprocessable if branch exists
+        
         if br_res.status_code not in [201, 422]:
-            raise HTTPException(status_code=500, detail=f"Branch creation failed: {br_res.text}")
+            error_detail = br_res.json().get("message", "Branch creation failed")
+            raise HTTPException(status_code=br_res.status_code, detail=f"GitHub Branching Failed: {error_detail}")
 
-        # 5. Clone fork's branch
+        # 9. Clone fork's branch
         auth_clone_url = fork_url.replace("https://github.com/", f"https://{token}@github.com/")
         os.makedirs("workspace", exist_ok=True)
         subprocess.run(["git", "clone", "-b", branch_name, auth_clone_url, workspace_path], check=True, capture_output=True)
         
-        # 6. Update State & Persistence
+        # 10. State Sync & Registry Persistence
         global SYSTEM_STATE
         if folder not in SYSTEM_STATE["provisioned_repos"]:
             SYSTEM_STATE["provisioned_repos"].append(folder)
             
         registry = load_json(REGISTRY_PATH, {"repos": []})
         for r in registry["repos"]:
-            if r["html_url"] == url:
+            if r["html_url"].lower() == url.lower():
                 r["provisioned"] = True
+                r["provision_folder"] = folder
                 r["provisioned_at"] = datetime.now().isoformat()
         save_json(REGISTRY_PATH, registry)
         
         return {"status": "success", "folder": folder, "branch": branch_name}
 
+    except HTTPException as he:
+        # Standardize error logs
+        print(f"[API ERROR] Provisioning Logic Exception: {he.detail}")
+        raise he
     except subprocess.CalledProcessError as e:
         clean_err = e.stderr.decode().replace(token, "****") if token else e.stderr.decode()
-        raise HTTPException(status_code=500, detail=f"Clone failed: {clean_err}")
+        return {
+            "status": "error",
+            "detail": f"Clone operation failed: {clean_err}",
+            "traceback": traceback.format_exc()
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Provisioning error: {str(e)}")
+        # Global Descriptive Error Reporting
+        return {
+            "status": "error",
+            "detail": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 # --- Repo Management ---
 @app.get("/repos")
