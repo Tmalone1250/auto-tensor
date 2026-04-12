@@ -103,11 +103,11 @@ class ProcessManager:
             log_file.write(f"Target: {target}\n")
         log_file.flush()
 
-        # Command to run inside the venv (Robust resolution)
+        # Command to run inside the venv (Linux-native resolution)
         if sys.platform == "win32":
-            venv_python = os.path.join(".venv", "Scripts", "python.exe")
+            venv_python = ".venv/Scripts/python.exe"
         else:
-            venv_python = os.path.join(".venv", "bin", "python")
+            venv_python = ".venv/bin/python"
 
         # Fallback logic for mismatched environments (e.g. Linux venv on Windows)
         if not os.path.exists(venv_python):
@@ -439,6 +439,15 @@ def promote_issue(background_tasks: BackgroundTasks, issue: Dict = Body(...)):
     
     if not repo:
         raise HTTPException(status_code=400, detail="Missing repo in issue data")
+    
+    repro_cmd = issue.get("repro_cmd")
+    fix_cmd = issue.get("fix_cmd")
+    
+    if not repro_cmd or not fix_cmd or "# Missing" in repro_cmd or "# Missing" in fix_cmd:
+        raise HTTPException(
+            status_code=400, 
+            detail="Mission malformed: Scout failed to provide actionable repro_cmd or fix_cmd."
+        )
     
     try:
         # Store promotion in a directive file for the Coder to pick up

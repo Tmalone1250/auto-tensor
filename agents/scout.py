@@ -126,7 +126,7 @@ class SurgicalScoutV3:
         return targets
 
     def _get_batch_prompt(self, targets: List[Dict]) -> str:
-        persona_note = "Identify the absolute top highest-priority, surgical-fix candidates. Quality over quantity."
+        persona_note = "You are a DevOps Engineer specializing in Systems Reliability. Identify the absolute top highest-priority, surgical-fix candidates. Quality over quantity."
         issues_text = ""
         for t in targets:
             issues_text += f"---\nID: {t['id']}\nRepo: {t['repo']}\nTitle: {t['title']}\nBody: {t.get('body', '')[:600]}\n"
@@ -140,7 +140,7 @@ class SurgicalScoutV3:
             "- 'id' (integer from the input)\n"
             "- 'target_repo' (the full GitHub HTTPS URL for the repository)\n"
             "- 'strategy' (detailed Markdown string explaining the fix)\n"
-            "- 'repro_cmd' (the EXACT bash command to run in the repo to trigger/see the failure. Begin with setup like 'npm install' if needed)\n"
+            "- 'repro_cmd' (the EXACT bash command to run in the repo to trigger/see the failure. You MUST provide this as an actionable shell string. If unknown, best-guess based on tech stack: e.g. 'npm install && npm test' for JS, 'python3 -m pytest' for Python, etc.)\n"
             "- 'fix_cmd' (the EXACT bash command to run to verify the fix works, like 'npm test' or 'make build')\n"
             "- 'surgical_files' (list of strings representing the files to be modified).\n\n"
             "Be direct, technically precise, and bored. "
@@ -237,8 +237,9 @@ class SurgicalScoutV3:
             sys.stdout.flush()
             for target in top_n:
                 target["strategy"] = "Strategist Offline: LLM generation failed. Check telemetry for details."
-                target["repro_cmd"] = "ls -R"
-                target["fix_cmd"] = "ls -R"
+                target["target_repo"] = target.get("target_repo") or f"https://github.com/{target['repo']}"
+                target["repro_cmd"] = "ls -R # Missing"
+                target["fix_cmd"] = "ls -R # Missing"
                 target["surgical_files"] = []
             
         report = {

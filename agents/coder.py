@@ -8,6 +8,7 @@ import sys
 import json
 import logging
 import time
+import requests
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -17,18 +18,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.health_check import governor_gate
 from core.executor import run_wsl_in_workspace
 from core.llm import LlmClient
-
 # --- Configuration ---
 LOG_DIR = "logs"
 MAIN_LOG = f"{LOG_DIR}/coder.log"
 MISSION_PARAMS = f"{LOG_DIR}/mission_parameters.json"
-
-os.makedirs(LOG_DIR, exist_ok=True)
-logging.basicConfig(
-    filename=MAIN_LOG,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
 
 import argparse
 
@@ -81,48 +74,143 @@ def get_repo_folder(target_repo: str) -> str:
         return clean.split("/")[-1]
     return clean
 
-def ensure_repo_locally(target_repo: str) -> str:
-    """Ensures the repo exists in the workspace, cloning if necessary."""
+def fork_repository(target_repo_url: str) -> Optional[str]:
+    """Forks the target repository to the authenticated user's account."""
+    token = os.getenv("GITHUB_KEY")
+    if not token:
+        log_and_print("CRITICAL: GITHUB_KEY not found. Cannot fork.", "error")
+        return None
+
+    # Parse owner and repo from URL
+    parts = target_repo_url.rstrip("/").split("/")
+    owner, repo = parts[-2], parts[-1].replace(".git", "")
+    
+    log_and_print(f"PROGRESS: [Forking Repository {owner}/{repo}...]")
+    url = f"https://api.github.com/repos/{owner}/{repo}/forks"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, timeout=30)
+        if response.status_code in [201, 202]:
+            fork_data = response.json()
+            fork_url = fork_data.get("html_url")
+            log_and_print(f"Fork initiated: {fork_url}")
+            # Give GitHub a moment to provision the fork
+            time.sleep(5)
+            return fork_url
+        else:
+            log_and_print(f"Failed to fork: {response.status_code} - {response.text}", "error")
+            return None
+    except Exception as e:
+        log_and_print(f"Exception during fork: {e}", "error")
+        return None
+
+def create_branch(fork_url: str, mission_id: str) -> Optional[str]:
+    """Creates a unique fix branch on the fork."""
+    token = os.getenv("GITHUB_KEY")
+    parts = fork_url.rstrip("/").split("/")
+    owner, repo = parts[-2], parts[-1].replace(".git", "")
+    branch_name = f"auto-fix-{mission_id}"
+    
+    log_and_print(f"PROGRESS: [Creating Branch {branch_name} on {owner}/{repo}...]")
+    
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
+
+    try:
+        # 1. Get default branch and its SHA
+        repo_info_url = f"https://api.github.com/repos/{owner}/{repo}"
+        repo_info = requests.get(repo_info_url, headers=headers).json()
+        default_branch = repo_info.get("default_branch", "main")
+        
+        ref_url = f"https://api.github.com/repos/{owner}/{repo}/git/refs/heads/{default_branch}"
+        ref_data = requests.get(ref_url, headers=headers).json()
+        base_sha = ref_data.get("object", {}).get("sha")
+        
+        if not base_sha:
+            log_and_print(f"Could not find SHA for {default_branch}", "error")
+            return None
+
+        # 2. Create the new branch
+        create_ref_url = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
+        payload = {
+            "ref": f"refs/heads/{branch_name}",
+            "sha": base_sha
+        }
+        res = requests.post(create_ref_url, headers=headers, json=payload)
+        if res.status_code == 201:
+            log_and_print(f"Branch created: {branch_name}")
+            return branch_name
+        else:
+            log_and_print(f"Failed to create branch: {res.status_code} - {res.text}", "error")
+            return None
+    except Exception as e:
+        log_and_print(f"Exception during branching: {e}", "error")
+        return None
+
+def ensure_repo_locally(target_repo: str, mission_id: str) -> str:
+    """Ensures a forked and branched version of the repo exists in the workspace."""
     folder = get_repo_folder(target_repo)
     workspace_path = f"workspace/{folder}"
     
+    # In the professional forking workflow, we always prefer a fresh clone of the branch
+    # But if it exists, we assume it's the right one for now.
     if os.path.exists(workspace_path):
-        log_and_print(f"Repo folder '{folder}' found locally.")
+        log_and_print(f"Workspace folder '{folder}' already exists. Reusing.")
         return folder
 
-    if target_repo.startswith("http"):
-        # We need to clone
-        github_token = os.getenv("GITHUB_KEY")
-        clone_url = target_repo
-        
-        # Inject token if available for authenticated clone
-        if github_token and "@github.com" not in target_repo:
-            clone_url = target_repo.replace("https://github.com/", f"https://{github_token}@github.com/")
+    if not target_repo.startswith("http"):
+        log_and_print(f"CRITICAL: Repo '{target_repo}' missing and no URL provided.", "error")
+        return ""
 
-        log_and_print(f"Repo '{folder}' NOT found locally. Attempting auto-clone...")
-        # Explicit status marker for dashboard
-        log_and_print("PROGRESS: Cloning repository from source...")
-        os.makedirs("workspace", exist_ok=True)
-        try:
-            # Run git clone. We mask the token in our own logs.
-            mask_url = target_repo # Use the original for display
-            log_and_print(f"Executing: git clone {mask_url} workspace/{folder}")
-            
-            # Use subprocess with the real clone_url but capture output to prevent token leakage in tracebacks
-            subprocess.run(["git", "clone", clone_url, workspace_path], check=True, capture_output=True, text=True)
-            log_and_print(f"Successfully cloned {folder}.")
-            return folder
-        except subprocess.CalledProcessError as e:
-            # Mask token in error message
-            clean_error = str(e.stderr).replace(github_token, "********") if github_token else e.stderr
-            log_and_print(f"CRITICAL: Failed to clone {folder}: {clean_error}", "error")
-            return ""
-        except Exception as e:
-            log_and_print(f"CRITICAL: Unexpected error during clone of {folder}: {e}", "error")
-            return ""
+    github_token = os.getenv("GITHUB_KEY")
+    
+    # 1. Fork
+    fork_url = fork_repository(target_repo)
+    if not fork_url:
+        return ""
+        
+    # 2. Branch
+    branch_name = create_branch(fork_url, mission_id)
+    if not branch_name:
+        return ""
+
+    # 3. Clone Fork's Branch
+    log_and_print("PROGRESS: [Cloning Forked Branch...]")
+    os.makedirs("workspace", exist_ok=True)
+    
+    auth_clone_url = fork_url.replace("https://github.com/", f"https://{github_token}@github.com/")
+    
+    try:
+        log_and_print(f"Executing: git clone -b {branch_name} {fork_url} workspace/{folder}")
+        # Capture output to prevent token leakage
+        subprocess.run(["git", "clone", "-b", branch_name, auth_clone_url, workspace_path], 
+                       check=True, capture_output=True, text=True)
+        log_and_print(f"Successfully cloned branch {branch_name} of {folder}.")
+        return folder
+    except subprocess.CalledProcessError as e:
+        clean_error = str(e.stderr).replace(github_token, "********") if github_token else e.stderr
+        log_and_print(f"CRITICAL: Failed to clone {folder}: {clean_error}", "error")
+        return ""
+    except Exception as e:
+        log_and_print(f"CRITICAL: Unexpected error during clone of {folder}: {e}", "error")
+        return ""
 
 def execute_mission():
     """Main lifecycle for Directive-Driven Orchestration."""
+    # Move logging initialization to the very first line of mission
+    os.makedirs(LOG_DIR, exist_ok=True)
+    logging.basicConfig(
+        filename=MAIN_LOG,
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    
     parser = argparse.ArgumentParser(description="Auto-Tensor Coder Agent")
     parser.add_argument("--force", action="store_true", help="Bypass Governor safety gates")
     args = parser.parse_args()
@@ -164,7 +252,7 @@ def execute_mission():
         log_and_print("Using default fix-verification command: ls -R", "warning")
 
     # Ensure repository folder exists
-    repo_folder = ensure_repo_locally(target_repo_raw)
+    repo_folder = ensure_repo_locally(target_repo_raw, mission_id)
     if not repo_folder:
         log_and_print(f"CRITICAL: Mission {mission_id} aborted — Repository unavailable.", "error")
         return
