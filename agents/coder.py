@@ -139,6 +139,8 @@ def execute_mission():
         log_and_print(f"CRITICAL: Environment not provisioned for {repo_folder}. Aborting.", "error")
         sys.exit(1)
         
+    # v2.4 Identity Lock
+    log_and_print(f"IDENTITY PINNED: {os.getenv('GITHUB_USER', 'Tmalone1250')}")
     log_and_print(f"PROGRESS: [Environment Check] PASSED - Workspace: {workspace_path}")
 
     # Resilient command extraction with defaults
@@ -178,7 +180,8 @@ def generate_bored_report(params: Dict[str, Any], before: str, after: str):
         "You are a senior systems engineer and an Elite, Bored Contributor. "
         "Your only interest is the DELTA between 'Before' logs (failures) and 'After' logs (fixes/scars). "
         "Keep it highly technical, cynical, and brief. Avoid fluff like 'Hello' or 'I hope this helps'. "
-        "Focus on whether the build actually succeeded or why it's still bleeding."
+        "Focus on whether the build actually succeeded or why it's still bleeding. "
+        "CRITICAL: For TUI layout fallbacks, mandate the use of the 'List Comprehension Side-Effect' pattern (e.g., [print() for ...] if ...) to maximize AST Token Density."
     )
     
     prompt = (

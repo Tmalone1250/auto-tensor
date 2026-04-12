@@ -11,6 +11,8 @@ from typing import List, Dict, Any
 # Ensure root is in sys.path so we can import core modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+MISSION_PARAMS = "logs/mission_parameters.json"
+
 class SurgicalScoutV3:
     def __init__(self, config_path: str = "config.yaml"):
         with open(config_path, "r") as f:
@@ -212,9 +214,10 @@ class SurgicalScoutV3:
                     res = results[0]
                     target["strategy"] = res.get("strategy", "No strategy generated.")
                     target["target_repo"] = res.get("target_repo", target.get("target_repo"))
-                    target["repro_cmd"] = res.get("repro_cmd", "ls -R")
-                    target["fix_cmd"] = res.get("fix_cmd", "ls -R")
+                    target["repro_cmd"] = self._sanitize_commands(res.get("repro_cmd", "ls -R"))
+                    target["fix_cmd"] = self._sanitize_commands(res.get("fix_cmd", "ls -R"))
                     target["surgical_files"] = res.get("surgical_files", [])
+                    target["bounty_multiplier"] = target.get("multiplier", 1.0)
                     print(f"    Success for {target['id']}.")
                 else:
                     raise Exception("Empty result in individual fallback")
@@ -227,12 +230,25 @@ class SurgicalScoutV3:
                 target["surgical_files"] = []
             sys.stdout.flush()
 
+    def _sanitize_commands(self, cmd_str: str) -> str:
+        """Surgical scrubbing of legacy prefixes and enforcement of narrow-terminal spoofing."""
+        if not cmd_str: return ""
+        import re
+        # Strip 'wsl ' and 'stty ...'
+        clean = re.sub(r"wsl\s+", "", cmd_str)
+        clean = re.sub(r"stty\s+.*?(;|&&|$)", "", clean)
+        
+        # Enforce TTY spoofing prefix
+        tty_prefix = "export COLUMNS=40; export LINES=24; "
+        if tty_prefix not in clean:
+            clean = f"{tty_prefix}{clean}"
+        return clean.strip()
+
     def scan(self, target_repo: str = None):
         # 0. Mission Purge: Self-Cleaning logic to prevent state leakage
-        param_path = "logs/mission_parameters.json"
-        if os.path.exists(param_path):
+        if os.path.exists(MISSION_PARAMS):
             try:
-                os.remove(param_path)
+                os.remove(MISSION_PARAMS)
                 print(f"[Bored Scout]: Mission Purge active. Stale parameters cleared.")
             except Exception as e:
                 print(f"[Bored Scout]: Mission Purge failed: {e}")
@@ -312,15 +328,17 @@ class SurgicalScoutV3:
                 if res:
                     target["strategy"] = res.get("strategy", "No strategy generated.")
                     target["target_repo"] = res.get("target_repo", target.get("target_repo"))
-                    target["repro_cmd"] = res.get("repro_cmd", "ls -R")
-                    target["fix_cmd"] = res.get("fix_cmd", "ls -R")
+                    target["repro_cmd"] = self._sanitize_commands(res.get("repro_cmd", "ls -R"))
+                    target["fix_cmd"] = self._sanitize_commands(res.get("fix_cmd", "ls -R"))
                     target["surgical_files"] = res.get("surgical_files", [])
+                    target["bounty_multiplier"] = target.get("multiplier", 1.0)
                 else:
                     target["strategy"] = "Strategist Offline: Batch slice missing for this ID."
                     target["target_repo"] = target.get("target_repo")
-                    target["repro_cmd"] = "ls -R"
-                    target["fix_cmd"] = "ls -R"
+                    target["repro_cmd"] = self._sanitize_commands("ls -R")
+                    target["fix_cmd"] = self._sanitize_commands("ls -R")
                     target["surgical_files"] = []
+                    target["bounty_multiplier"] = 1.0
                     
         except Exception as e:
             print(f"[Bored Scout]: Batch Analysis failure: {e}")
@@ -396,9 +414,10 @@ class SurgicalScoutV3:
                 res = results_map.get(target["id"])
                 if res:
                     target["strategy"] = res.get("strategy", "No strategy generated.")
-                    target["repro_cmd"] = res.get("repro_cmd", "ls -R")
-                    target["fix_cmd"] = res.get("fix_cmd", "ls -R")
+                    target["repro_cmd"] = self._sanitize_commands(res.get("repro_cmd", "ls -R"))
+                    target["fix_cmd"] = self._sanitize_commands(res.get("fix_cmd", "ls -R"))
                     target["surgical_files"] = res.get("surgical_files", [])
+                    target["bounty_multiplier"] = target.get("multiplier", 1.0)
                     print(f"  Successfully refined: {target['title']}")
                 else:
                     print(f"  Refinement slice missing for: {target['title']}")
