@@ -6,6 +6,7 @@ from core.base_agent import BaseAgent
 from core.tools.scout_ops import tool_get_repo_map, tool_fetch_issues, tool_rank_issues
 
 MISSION_PARAMS = "logs/mission_parameters.json"
+REPORT_PATH = "logs/scout_report.json"
 REGISTRY_PATH = "core/registry.json"
 
 class ScoutAgent(BaseAgent):
@@ -32,7 +33,6 @@ class ScoutAgent(BaseAgent):
     def scan(self, target_repo: str = None):
         if os.path.exists(MISSION_PARAMS): os.remove(MISSION_PARAMS)
         repos_to_scan = [target_repo] if target_repo else self.watchlist
-        all_results = []
         
         for repo in repos_to_scan:
             print(f"[Bored Scout]: Grounding into {repo}...")
@@ -40,20 +40,44 @@ class ScoutAgent(BaseAgent):
             issues = tool_fetch_issues(repo)
             ranked_issues = tool_rank_issues(issues, target_repo=repo)
             
-            if ranked_issues:
-                all_results.append({"repo": repo, "top_issue": ranked_issues[0], "map": repo_map})
-
-        if all_results:
-            top_target = all_results[0]
-            context = f"Target Repository: {top_target['repo']}\nRepo Map:\n{top_target['map'][:1000]}\n\nTop Issue:\n{top_target['top_issue'].get('title')}: {top_target['top_issue'].get('body')[:500]}\n\nGoal: Audit discovery using tools and output FINISH when entry_point and fix_cmd are known."
+            top_targets = []
             
-            # Start V3 Heartbeat Iteration
-            final_state = self.execute_mission(context)
+            # Restoring Top-3 Focus
+            for issue in ranked_issues[:3]:
+                context = (f"Target Repository: {repo}\n"
+                           f"Repo Map:\n{repo_map[:1000]}\n\n"
+                           f"Target Issue:\n{issue.get('title')}: {issue.get('body')[:500]}\n\n"
+                           f"Goal: Use tools to discover the codebase and formulate a blueprint. "
+                           f"Output FINISH when you have args: strategy, repro_cmd, and fix_cmd.")
+                
+                print(f"[Bored Scout]: Analyzing Issue #{issue.get('number')} via Heartbeat...")
+                final_state = self.execute_mission(context)
+                
+                args = final_state.get("args", {}) if final_state else {}
+                
+                top_targets.append({
+                    "id": issue.get("number") or issue.get("id"),
+                    "title": issue.get("title"),
+                    "body": issue.get("body"),
+                    "strategy": args.get("strategy", "Standard heuristic approach"),
+                    "repro_cmd": args.get("repro_cmd", "ls -l"),
+                    "fix_cmd": args.get("fix_cmd", "ls -l"),
+                    "multiplier": issue.get("delta_score", 1.0),
+                    "repo": repo
+                })
             
-            entry = final_state.get("args", {}).get("entry_point", "cli.py") if final_state else "cli.py"
+            # Assemble API payload
+            report_data = {
+                "repo": repo,
+                "total_scanned": len(ranked_issues),
+                "top_targets": top_targets
+            }
             
-            with open(MISSION_PARAMS, "w") as f:
-                json.dump({"mission_id": "V3-HEARTBEAT", "target_repo": top_target["repo"], "entry_point": entry}, f, indent=2)
+            os.makedirs("logs", exist_ok=True)
+            with open(REPORT_PATH, "w", encoding="utf-8") as f:
+                json.dump(report_data, f, indent=2)
+                
+            print(f"[Bored Scout]: Report generated successfully inside {REPORT_PATH}.")
 
 if __name__ == "__main__":
     import argparse
