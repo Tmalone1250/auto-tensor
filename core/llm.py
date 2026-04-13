@@ -134,7 +134,7 @@ class LlmClient:
         }
         
         current_model = "gemini-3-flash-preview"
-        max_retries = 5
+        max_retries = max(12, len(self.api_keys) * 4)
         
         for attempt in range(max_retries):
             if not self.api_key:
@@ -165,16 +165,21 @@ class LlmClient:
                     continue
                 
                 elif response.status_code == 429:
-                    # Rate Limit: Cooling down
+                    # Enforce rotational cooling based on depth of exhaustion
+                    if attempt >= len(self.api_keys) * 2:
+                        delay = 60 + random.uniform(0, 5) # Third cycle overload
+                    elif attempt >= len(self.api_keys):
+                        delay = 15 + random.uniform(0, 2) # Second cycle warning
+                    else:
+                        delay = 4 + random.uniform(0, 1)  # Initial failover padding
+                        
                     if self._get_next_key():
-                        print(f"  [LLM] 429 Failover initiated. Attempt {attempt+1}/{max_retries}...")
+                        print(f"  [LLM] 429 Failover initiated. Cooling {delay:.1f}s. Attempt {attempt+1}/{max_retries}...")
                         sys.stdout.flush()
-                        continue
-
-                    # Mandatory 15s wait on first retry, then exponential
-                    delay = 15 if attempt == 0 else min(60, (4 ** (attempt + 1)) + random.uniform(-1, 1))
-                    print(f"[Bored Operator]: Rate limit hit (429). Cooling down for {delay:.1f}s...")
-                    time.sleep(max(0, delay))
+                    else:
+                        print(f"[Bored Operator]: Rate limit hit (429). Single key cooling for {delay:.1f}s...")
+                        
+                    time.sleep(delay)
                     continue
                 
                 else:
