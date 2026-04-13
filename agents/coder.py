@@ -3,7 +3,6 @@ import sys
 import json
 import logging
 from core.base_agent import BaseAgent
-from core.tools.common import execute_mission_step, reflect_and_memorize
 
 LOG_DIR = "logs"
 MAIN_LOG = f"{LOG_DIR}/coder.log"
@@ -37,11 +36,6 @@ class CoderAgent(BaseAgent):
         
         # Start Heartbeat Iteration
         self.execute_mission(context)
-
-        # Reflection Mandate
-        log_and_print("Triggering Reflection Mandate...")
-        reflect_msg = reflect_and_memorize("coder", target_repo, entry_point, fix_cmd)
-        log_and_print(reflect_msg)
 
 if __name__ == "__main__":
     import argparse

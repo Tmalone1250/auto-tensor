@@ -79,6 +79,18 @@ class BaseAgent:
             if action == "FINISH":
                 self.mission_complete = True
                 print(f"[{self.agent_name.capitalize()}] Heartbeat: Mission successfully finalized.")
+                
+                # Reflection Trigger
+                try:
+                    args = parsed.get("args", {})
+                    target_repo = args.get("target_repo", "UNKNOWN")
+                    entry = args.get("entry_point", "cli.py")
+                    success_cmd = args.get("fix_cmd", "python3 " + entry)
+                    
+                    self.invoke_tool("reflect_and_memorize", agent=self.agent_name, target_repo=target_repo, entry_point=entry, success_cmd=success_cmd)
+                except Exception as e:
+                    print(f"[{self.agent_name.capitalize()}] Reflection trace failed: {str(e)}")
+                    
                 return parsed
             elif action == "TOOL":
                 tool_name = parsed.get("tool")
