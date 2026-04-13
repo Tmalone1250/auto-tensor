@@ -205,6 +205,7 @@ class SurgicalScoutV3:
         
         return (
             f"{persona_note}\n\n"
+            f"Do not attempt to read the entire repository. Use your tools to map the architecture first, then zero in on the relevant files.\n\n"
             f"Propose a concise, structural fix strategy for each of the following GitHub issues.\n\n"
             f"{issues_text}\n"
             "TECH-STACK MANDATE: Identify if the project is Node.js, Python, or Rust. Use language-specific commands:\n"
