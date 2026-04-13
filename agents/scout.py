@@ -118,7 +118,7 @@ class SurgicalScoutV3:
             if label in labels:
                 score += boost
             
-        # Premium Repo Multiplier (1.66x Hard-Lock)
+        # Premium Repo Multiplier (1.66x Hard-Lock v2.6)
         # Load premium list from instructions if available
         premium_repos = []
         if hasattr(self, "instructions"):
@@ -128,7 +128,8 @@ class SurgicalScoutV3:
                  premium_repos = [r.strip("- ").strip() for r in match.group(1).splitlines() if r.strip()]
 
         repo_base = issue["repo"].split("/")[-1].lower() if "/" in issue["repo"] else issue["repo"].lower()
-        is_premium = any(p in issue["repo"].lower() or p in repo_base for p in premium_repos)
+        # Force 1.66 for gittensor specifically (V2.6 Mandate)
+        is_premium = (repo_base == "gittensor") or any(p in issue["repo"].lower() or p in repo_base for p in premium_repos)
 
         # Bounty Hunter v2.4+: Maintainer or Premium Multiplier
         maintainer_roles = ["OWNER", "MEMBER", "COLLABORATOR"]
@@ -505,32 +506,49 @@ class SurgicalScoutV3:
         except Exception as e:
             return {"status": "error", "msg": f"Tree capture failed: {e}"}
 
-        # 2. Discern Entry Point & Audit Dependencies (Audit 2.0: Deep-Path Priority)
+        # 2. Discern Entry Point & Audit Dependencies (Audit 2.1: Entry Prioritization v2.6)
         py_files = [f.lstrip("./") for f in files if f.endswith(".py")]
         
-        # Priority 1: CLI/BIN folders
-        cli_matches = [f for f in py_files if "cli/" in f or "bin/" in f or "scripts/" in f]
-        # Priority 2: main/app entry points
-        entry_patterns = ["__main__.py", "main.py", "cli.py", "app.py"]
+        # Priority 1: Path & Name Score
+        # Names: main.py > cli.py > __main__.py > index.ts
+        # Location: / or cli/ score high
+        candidates = []
+        for f in py_files:
+             score = 0
+             name = os.path.basename(f)
+             if name == "main.py": score += 10
+             elif name == "cli.py": score += 8
+             elif name == "__main__.py": score += 6
+             elif name == "app.py": score += 4
+             
+             if "/" not in f: score += 5 # Root priority
+             elif "cli/" in f: score += 4 # cli/ folder priority
+             
+             if score > 0:
+                  candidates.append((f, score))
         
-        verified_entry = None
-        if cli_matches:
-            # Pick the deepest cli match (most likely the actual tool entry)
-            verified_entry = max(cli_matches, key=lambda x: x.count("/"))
-        else:
-            for pattern in entry_patterns:
-                matches = [f for f in py_files if f.endswith(pattern)]
-                if matches:
-                    verified_entry = max(matches, key=lambda x: x.count("/"))
-                    break
+        # Fallback to TS/JS if Python is MIA
+        if not candidates:
+             ts_js = [f.lstrip("./") for f in files if f.endswith((".ts", ".js", ".rs"))]
+             for f in ts_js:
+                  name = os.path.basename(f)
+                  if name in ["index.ts", "index.js", "main.rs"]:
+                       candidates.append((f, 2))
         
-        # Fallback to absolute basics if no Python logic found
-        if not verified_entry:
-            candidates = ["index.ts", "index.js", "src/main.rs"]
-            for cand in candidates:
-                if any(cand in f for f in files):
-                    verified_entry = cand
-                    break
+        # Pick top candidate
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        verified_entry = candidates[0][0] if candidates else None
+        
+        # 2b. Build Dynamic Command Reconstruction (Blueprint v2.6)
+        verified_repro = "ls -R"
+        if verified_entry:
+             if verified_entry.endswith(".py"):
+                  # v2.6 Shell Mandate
+                  verified_repro = f'bash -c "export COLUMNS=40; export LINES=24; python3 {verified_entry} help"'
+             elif verified_entry.endswith((".ts", ".js")):
+                  verified_repro = f"node {verified_entry}"
+             elif verified_entry.endswith(".rs"):
+                  verified_repro = "cargo run -- help"
         
         # 2b. cat pyproject.toml / requirements.txt
         manifest_data = "Missing"
@@ -551,6 +569,7 @@ class SurgicalScoutV3:
         # 3. Parameter Lock: Sync with mission_parameters.json
         grounding_data = {
             "entry_point": verified_entry,
+            "repro_cmd": verified_repro,
             "grounded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "tree_size": len(files),
             "status": "VERIFIED" if verified_entry else "UNCERTAIN"
@@ -569,25 +588,29 @@ class SurgicalScoutV3:
         params["mission_id"] = params.get("mission_id", f"AUDIT_{time.strftime('%H%M%S')}")
         params["target_repo"] = params.get("target_repo", repo_folder)
         
-        # Update calls with absolute verified module if it's Python
+        # LOCK REALITY (Blueprint v2.6): Force verified repro command
+        params["repro_cmd"] = verified_repro
+        params["fix_cmd"] = params.get("fix_cmd", verified_repro) # Fallback to help menu for fix check
+        params["entry_point"] = verified_entry
+        
+        # Update calls with absolute verified module if it's Python (Legacy support)
         if verified_entry and verified_entry.endswith(".py"):
             module_name = verified_entry.replace(".py", "").replace("/", ".")
             if module_name == "__main__":
                 module_name = repo_folder
-            
-            # Update repro/fix commands if they used the generic entry
-            current_repro = params.get("repro_cmd", "ls -R")
-            current_fix = params.get("fix_cmd", "ls -R")
-            params["repro_cmd"] = current_repro.replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
-            params["fix_cmd"] = current_fix.replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
+            # Only update if legacy string detected
+            if "python3 -m gittensor.cli" in params.get("repro_cmd", ""):
+                 params["repro_cmd"] = params["repro_cmd"].replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
+            if "python3 -m gittensor.cli" in params.get("fix_cmd", ""):
+                 params["fix_cmd"] = params["fix_cmd"].replace("python3 -m gittensor.cli", f"python3 -m {module_name}")
         
         params["grounding"] = grounding_data
-        params["bounty_multiplier"] = params.get("bounty_multiplier", 1.0)
+        params["bounty_multiplier"] = 1.66 if repo_folder == "gittensor" else params.get("bounty_multiplier", 1.0)
         
         try:
             with open(MISSION_PARAMS, "w") as f:
                 json.dump(params, f, indent=2)
-            print(f"[Bored Scout]: GROUNDING SUCCESS. Parameters locked.")
+            print(f"[Bored Scout]: GROUNDING SUCCESS. Reality locked to {MISSION_PARAMS}")
         except Exception as e:
             print(f"  Grounding sync failed: {e}")
         

@@ -19,7 +19,7 @@ class ReflectionEngine:
         return os.path.join(folder, f"{prefix}{name}.md")
 
     def update_skill(self, repo: str, strategy_data: Dict[str, Any], agent: str = "scout"):
-        """Deduplication-aware skill update. Replaces existing header or appends."""
+        """Surgical Upsert: Replaces existing [REPO] block or appends fresh state."""
         path = self._get_path(agent, is_skill=True)
         if not os.path.exists(path):
             return
@@ -41,10 +41,10 @@ class ReflectionEngine:
         ]
         new_block_str = "\n".join(new_block) + "\n"
 
-        # Regex to find and replace existing block
-        pattern = re.escape(header) + r"$.*?(?=\n## |$)"
-        if re.search(pattern, content, re.MULTILINE | re.DOTALL):
-            updated_content = re.sub(pattern, new_block_str.strip(), content, flags=re.MULTILINE | re.DOTALL)
+        # Surgical Replacement: Find existing block and replace (Upsert v2.6)
+        pattern = rf"## \[{re.escape(repo)}\]([\s\S]*?)(?=\n## |$)"
+        if re.search(pattern, content):
+            updated_content = re.sub(pattern, new_block_str.strip(), content)
         else:
             updated_content = content.strip() + "\n\n" + new_block_str
 
