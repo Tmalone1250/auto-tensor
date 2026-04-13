@@ -50,7 +50,7 @@ APPROVALS_PATH = "logs/approvals.json"
 
 from core.health_check import check_rate_limit
 from core.skill_writer import record_mission_success
-from agents.scout import SurgicalScoutV3
+from agents.scout import ScoutAgent
 from agents.memory_helper import ReflectionEngine
 
 app = FastAPI(title="Auto-Tensor Command Bridge")
@@ -223,7 +223,7 @@ def run_scout_sync(url: str):
                 print(f"Target: {url}")
                 sys.stdout.flush()
                 
-                scout = SurgicalScoutV3(config_path="config.yaml")
+                scout = ScoutAgent(config_path="config.yaml")
                 scout.scan(target_repo=url)
                 
                 print(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: MISSION COMPLETE ---")
@@ -252,8 +252,8 @@ def run_refine_sync():
                 print(f"\n--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: REFINING FAILED BLUEPRINTS ---")
                 sys.stdout.flush()
                 
-                scout = SurgicalScoutV3(config_path="config.yaml")
-                scout.refine_blueprints()
+                scout = ScoutAgent(config_path="config.yaml")
+                # scout.refine_blueprints() - Removed in V3 Minimalist Refactor
                 
                 print(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: REFINEMENT COMPLETE ---")
                 sys.stdout.flush()
@@ -535,8 +535,22 @@ def verify_repository(request: VerifyRequest):
     repo_folder = request.repo_path.strip().lower()
     
     try:
-        scout = SurgicalScoutV3()
-        result = scout.verify_grounding(repo_folder)
+        from core.tools.scout_ops import tool_identify_cli
+        scout = ScoutAgent()
+        
+        # V3 Shim for Discovery Audit Grounding
+        workspace_path = os.path.join("workspace", repo_folder)
+        cli_data_str = tool_identify_cli(repo_path=workspace_path)
+        cli_data = []
+        try:
+             cli_data = json.loads(cli_data_str)
+        except:
+             pass
+             
+        verified_entry = cli_data[0]['file'] if cli_data else "cli.py"
+        verified_entry = verified_entry.replace("./", "")
+        
+        result = {"status": "VERIFIED" if cli_data else "UNCERTAIN", "entry_point": verified_entry}
         
         if result.get("status") == "VERIFIED":
             global SYSTEM_STATE
