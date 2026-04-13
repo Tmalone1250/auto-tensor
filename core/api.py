@@ -7,6 +7,7 @@ import sys
 import subprocess
 import json
 import traceback
+import uuid
 import logging
 import requests
 import contextlib
@@ -96,20 +97,18 @@ def save_json(path: str, data: dict):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-# --- V4 Stateless Mission Orchestrator ---
-class MissionRequest(BaseModel):
-    mission_id: str
-    identity_file: str = "instructions_coder.md"
-    context: str
+# --- V4 Structured Execution Pipeline Orchestrator ---
+class RepairRequest(BaseModel):
+    repo_url: str
+    issue_description: str
 
-def background_mission_runner(mission_id: str, identity_file: str, context: str):
-    from core.v4_agent import V4Agent
+def run_pipeline_bg(repo_url: str, issue_description: str, task_id: str):
+    from core.pipeline import RepairPipeline
     try:
-        agent = V4Agent(mission_id=mission_id, identity_file=identity_file)
-        agent.run_mission_loop(context)
+        pipe = RepairPipeline(repo_url, issue_description, task_id)
+        pipe.run()
     except Exception as e:
-        with open("logs/mission_state.json", "w", encoding="utf-8") as f:
-            json.dump({"mission_id": mission_id, "status": "FAILED", "error": str(e)}, f)
+        pass
 
 class ProcessManagerStub:
     self_start_time = time.time()
@@ -179,34 +178,25 @@ def get_status():
         "needs_verification": needs_verification
     }
 
-@app.post("/mission/start")
-def start_mission(req: MissionRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(background_mission_runner, req.mission_id, req.identity_file, req.context)
-    return {"status": "started", "mission_id": req.mission_id}
+@app.post("/task/repair")
+def trigger_repair_task(req: RepairRequest, background_tasks: BackgroundTasks):
+    from core.pipeline import RepairPipeline
+    task_id = str(uuid.uuid4())
+    background_tasks.add_task(run_pipeline_bg, req.repo_url, req.issue_description, task_id)
+    return {"status": "started", "task_id": task_id}
 
-@app.get("/mission/status")
-def get_mission_status():
-    path = "logs/mission_state.json"
+@app.get("/task/{task_id}/status")
+def get_task_status(task_id: str):
+    path = "logs/tasks.json"
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                db = json.load(f)
+                if task_id in db:
+                    return db[task_id]
         except:
             return {"status": "LOADING"}
-    return {"status": "NO_ACTIVE_MISSION"}
-
-@app.get("/mission/results")
-def get_mission_results():
-    path = "logs/mission_state.json"
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if data.get("status") == "COMPLETED":
-                    return {"results": data.get("history", [])[-1]}
-        except:
-            pass
-    return {"results": "PENDING"}
+    return {"status": "NO_TASK_FOUND"}
 
 # --- Provisioning Logic ---
 def get_provision_folder(url: str) -> str:

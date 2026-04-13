@@ -95,6 +95,26 @@ def tool_grep_codebase(regex_pattern: str, repo_path: str = ".") -> str:
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.stdout[:5000]
 
+@v4_tool
+def tool_grep_entry(repo_path: str = ".") -> str:
+    if not os.path.exists(repo_path):
+        return f"Error: Path {repo_path} does not exist."
+    cmd = ["find", repo_path, "-name", "index.html", "-o", "-name", "main.tsx", "-o", "-name", "App.tsx"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.stdout
+
+@v4_tool
+def verify_fix(repo_path: str, command: str) -> str:
+    if not os.path.exists(repo_path):
+        return f"Error: Path {repo_path} does not exist."
+    try:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=repo_path, timeout=120)
+        if result.returncode != 0:
+            return f"Error Verify Failed [{result.returncode}]:\n{result.stderr}"
+        return f"Verify Success:\n{result.stdout}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
 def json_safe_parse(raw_str: str) -> dict:
     """Non-V4 helper wrapper for native core JSON parsing."""
     clean = raw_str.strip().strip("```json").strip("```").strip()
@@ -109,6 +129,10 @@ v4_tool_registry = {
     "surgical_write": surgical_write,
     "tool_read_file_range": tool_read_file_range,
     "tool_atomic_replace": tool_atomic_replace,
+    "apply_patch": tool_atomic_replace,
     "tool_get_repo_map": tool_get_repo_map,
-    "tool_grep_codebase": tool_grep_codebase
+    "tool_map_repo": tool_get_repo_map,
+    "tool_grep_codebase": tool_grep_codebase,
+    "tool_grep_entry": tool_grep_entry,
+    "verify_fix": verify_fix
 }
