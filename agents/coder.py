@@ -148,16 +148,37 @@ def execute_mission():
     memory = ReflectionEngine()
 
     # Resilient command extraction with defaults
-    repro_cmd = params.get("repro_cmd")
-    fix_cmd = params.get("fix_cmd")
+    entry_point = params.get("entry_point")
+    raw_repro = params.get("repro_cmd", "")
+    raw_fix = params.get("fix_cmd", "")
     
-    # Check for placeholders or missing commands
-    if not repro_cmd or "offline" in repro_cmd.lower() or "retry" in repro_cmd.lower():
-        repro_cmd = "ls -R"
-        log_and_print("Using default reproduction command: ls -R (Sanity check)", "warning")
+    def finalize_cmd(cmd: str) -> str:
+        if not cmd or "offline" in cmd.lower() or "retry" in cmd.lower():
+            return "ls -R"
+            
+        # Cleanup
+        cmd = cmd.replace("wsl ", "")
+        import re
+        cmd = re.sub(r'stty.*?;', '', cmd)
+        
+        # Direct Path Mandate & UV Environment Fix
+        if entry_point and ("python" in cmd.lower() or "-m" in cmd):
+            args = "help" if "help" in cmd else ""
+            uv_cmd = f"uv run --active python3 {entry_point} {args}".strip()
+            
+            if 'bash -c "' in cmd:
+                cmd = re.sub(r'python3[^"]*', uv_cmd, cmd)
+            else:
+                cmd = f'bash -c "export COLUMNS=40; export LINES=24; {uv_cmd}"'
+                
+        return cmd.replace("  ", " ").strip()
 
-    if not fix_cmd or "offline" in fix_cmd.lower() or "retry" in fix_cmd.lower():
-        fix_cmd = "ls -R"
+    repro_cmd = finalize_cmd(raw_repro)
+    fix_cmd = finalize_cmd(raw_fix)
+    
+    if repro_cmd == "ls -R":
+        log_and_print("Using default reproduction command: ls -R (Sanity check)", "warning")
+    if fix_cmd == "ls -R":
         log_and_print("Using default fix-verification command: ls -R", "warning")
 
     log_and_print(f"MISSION LOADED: {mission_id} ({params.get('title', 'No Title')})")
