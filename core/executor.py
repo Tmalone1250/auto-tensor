@@ -128,7 +128,8 @@ def run_wsl(
     # UV Run Wrap: If uv is present and it's a python command, wrap it
     has_uv = subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
     if has_uv and ("python3" in command or "python " in command) and "uv run" not in command:
-        command = f"uv run {command}"
+        mod_cmd = command.replace("python3 ", "").replace("python ", "")
+        command = f"uv run --active python3 {mod_cmd}"
 
     if tty_suffix.strip() in command:
         # Already spoofed, just use the command as-is

@@ -1,5 +1,6 @@
 import os
 import subprocess
+import requests
 import json
 
 def tool_get_repo_map(max_depth: int = 3, repo_path: str = ".") -> str:
@@ -82,3 +83,17 @@ def tool_rank_issues(issues_list: list, target_repo: str) -> list:
         issue["delta_score"] = min(10, max(1, score))
         
     return sorted(issues_list, key=lambda x: x.get("delta_score", 0), reverse=True)
+
+def tool_fetch_issues(repo: str) -> list:
+    """Network-level issue discovery stripped natively out of the core loops."""
+    github_pat = os.getenv("GITHUB_KEY")
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if github_pat:
+        headers["Authorization"] = f"token {github_pat}"
+    
+    url = f"https://api.github.com/repos/{repo}/issues"
+    params = {"state": "open", "sort": "created", "direction": "desc", "per_page": 30}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return [i for i in response.json() if not i.get("assignee") and "pull_request" not in i]
+    return []
