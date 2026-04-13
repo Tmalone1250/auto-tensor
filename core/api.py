@@ -96,175 +96,27 @@ def save_json(path: str, data: dict):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-# --- Process Orchestration ---
-class ProcessManager:
+# --- V4 Stateless Mission Orchestrator ---
+class MissionRequest(BaseModel):
+    mission_id: str
+    identity_file: str = "instructions_coder.md"
+    context: str
+
+def background_mission_runner(mission_id: str, identity_file: str, context: str):
+    from core.v4_agent import V4Agent
+    try:
+        agent = V4Agent(mission_id=mission_id, identity_file=identity_file)
+        agent.run_mission_loop(context)
+    except Exception as e:
+        with open("logs/mission_state.json", "w", encoding="utf-8") as f:
+            json.dump({"mission_id": mission_id, "status": "FAILED", "error": str(e)}, f)
+
+class ProcessManagerStub:
+    self_start_time = time.time()
     def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
-        self.active_agent: Optional[str] = None
-        self.current_task: str = "Idle"
-        self.start_time: float = time.time()
+        self.start_time = time.time()
 
-    def run_agent(self, agent_name: str, target: Optional[str] = None):
-        """Launches an agent script in the background."""
-        if self.process and self.process.poll() is None:
-            return {"error": f"Agent {self.active_agent} is already running."}
-        
-        script_path = os.path.join("agents", f"{agent_name}.py")
-        if not os.path.exists(script_path):
-            return {"error": f"Agent script {script_path} not found."}
-
-        # Redirect output to workflow log
-        log_path = os.path.join("logs", "workflow.log")
-        os.makedirs("logs", exist_ok=True)
-        
-        log_file = open(log_path, "a", encoding="utf-8")
-        log_file.write(f"\n--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] COMMAND DECK: STARTING {agent_name.upper()} ---\n")
-        if target:
-            log_file.write(f"Target: {target}\n")
-        log_file.flush()
-
-        # Command to run inside the venv (HARDCODED Linux-native resolution)
-        if sys.platform == "win32":
-            venv_python = "venv/Scripts/python.exe"
-            if not os.path.exists(venv_python):
-                venv_python = ".venv/Scripts/python.exe"
-        else:
-            # ENFORCED: Must use venv/bin/python for VPS stability
-            venv_python = "venv/bin/python"
-            if not os.path.exists(venv_python):
-                # Fallback only to .venv if absolutely necessary
-                venv_python = ".venv/bin/python"
-
-        if not os.path.exists(venv_python):
-            venv_python = sys.executable # Final fallback
-
-        cmd = [venv_python, script_path]
-        if target:
-            cmd.append(target)
-
-        log_file.write(f"EXEC CMD: {' '.join(cmd)}\n")
-        log_file.flush()
-
-        try:
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=log_file,
-                text=True,
-                bufsize=1
-            )
-            self.active_agent = agent_name
-            self.current_task = f"Executing {agent_name} mission..."
-            
-            # Sync with Global State
-            global SYSTEM_STATE
-            SYSTEM_STATE["active_agent"] = agent_name.capitalize()
-            SYSTEM_STATE["is_running"] = True
-            
-            return {"status": "started", "agent": agent_name}
-        except Exception as e:
-            error_msg = f"FAILED TO START AGENT: {str(e)}"
-            log_file.write(f"[CRITICAL] {error_msg}\n")
-            log_file.write(traceback.format_exc())
-            log_file.flush()
-            return {"error": error_msg}
-
-    def stop_agent(self):
-        """Terminates the active agent process."""
-        if self.process and self.process.poll() is None:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-            
-            self.process = None
-            self.active_agent = None
-            self.current_task = "Idle (Terminated)"
-
-            # Sync with Global State
-            global SYSTEM_STATE
-            SYSTEM_STATE["active_agent"] = "None"
-            SYSTEM_STATE["is_running"] = False
-
-            return {"status": "terminated"}
-        return {"error": "No active agent to stop."}
-
-    def get_info(self):
-        """Checks process status and returns metadata."""
-        is_running = self.process is not None and self.process.poll() is None
-        if not is_running:
-            self.active_agent = None
-            self.current_task = "Idle"
-        
-        return {
-            "is_running": is_running,
-            "active_agent": self.active_agent or "None",
-            "current_task": self.current_task
-        }
-
-# Global Process Manager
-pm = ProcessManager()
-
-def run_scout_sync(url: str):
-    """Refactored Scout Orchestrator: Direct import with real-time log redirection."""
-    global SYSTEM_STATE
-    SYSTEM_STATE["active_agent"] = "Scout"
-    SYSTEM_STATE["is_running"] = True
-    SYSTEM_STATE["current_repo"] = url
-    
-    log_path = os.path.join("logs", "scout.log")
-    os.makedirs("logs", exist_ok=True)
-    
-    try:
-        with open(log_path, "a", encoding="utf-8") as log_file:
-            with contextlib.redirect_stdout(log_file), contextlib.redirect_stderr(log_file):
-                print(f"\n--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: STARTING SURGICAL SCOUT V3 ---")
-                print(f"Target: {url}")
-                sys.stdout.flush()
-                
-                scout = ScoutAgent(config_path="config.yaml")
-                scout.scan(target_repo=url)
-                
-                print(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: MISSION COMPLETE ---")
-                sys.stdout.flush()
-    except Exception:
-        with open(log_path, "a", encoding="utf-8") as log_file:
-            log_file.write(f"\n[CRITICAL ERROR] Scout crash detected:\n")
-            traceback.print_exc(file=log_file)
-            log_file.flush()
-    finally:
-        SYSTEM_STATE["active_agent"] = "None"
-        SYSTEM_STATE["is_running"] = False
-
-def run_refine_sync():
-    """Blueprint Refinement Orchestrator: Re-generates failed strategies in place."""
-    global SYSTEM_STATE
-    SYSTEM_STATE["active_agent"] = "Scout (Refining)"
-    SYSTEM_STATE["is_running"] = True
-    
-    log_path = os.path.join("logs", "scout.log")
-    os.makedirs("logs", exist_ok=True)
-    
-    try:
-        with open(log_path, "a", encoding="utf-8") as log_file:
-            with contextlib.redirect_stdout(log_file), contextlib.redirect_stderr(log_file):
-                print(f"\n--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: REFINING FAILED BLUEPRINTS ---")
-                sys.stdout.flush()
-                
-                scout = ScoutAgent(config_path="config.yaml")
-                # scout.refine_blueprints() - Removed in V3 Minimalist Refactor
-                
-                print(f"--- [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INTELLIGENCE NODE: REFINEMENT COMPLETE ---")
-                sys.stdout.flush()
-    except Exception:
-        with open(log_path, "a", encoding="utf-8") as log_file:
-            log_file.write(f"\n[CRITICAL ERROR] Refinement crash detected:\n")
-            traceback.print_exc(file=log_file)
-            log_file.flush()
-    finally:
-        SYSTEM_STATE["active_agent"] = "None"
-        SYSTEM_STATE["is_running"] = False
+pm = ProcessManagerStub()
 
 # --- CORS ---
 # --- CORS Hardening for Hybrid Deployment ---
@@ -327,15 +179,34 @@ def get_status():
         "needs_verification": needs_verification
     }
 
-@app.post("/agent/run")
-def run_agent(request: AgentRequest):
-    """Command Deck Trigger: Starts an agent mission."""
-    return pm.run_agent(request.agent_name, request.target)
+@app.post("/mission/start")
+def start_mission(req: MissionRequest, background_tasks: BackgroundTasks):
+    background_tasks.add_task(background_mission_runner, req.mission_id, req.identity_file, req.context)
+    return {"status": "started", "mission_id": req.mission_id}
 
-@app.post("/agent/stop")
-def stop_agent():
-    """Command Deck Trigger: Terminates active agent."""
-    return pm.stop_agent()
+@app.get("/mission/status")
+def get_mission_status():
+    path = "logs/mission_state.json"
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {"status": "LOADING"}
+    return {"status": "NO_ACTIVE_MISSION"}
+
+@app.get("/mission/results")
+def get_mission_results():
+    path = "logs/mission_state.json"
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("status") == "COMPLETED":
+                    return {"results": data.get("history", [])[-1]}
+        except:
+            pass
+    return {"results": "PENDING"}
 
 # --- Provisioning Logic ---
 def get_provision_folder(url: str) -> str:
@@ -647,100 +518,9 @@ def get_logs(agent: Optional[str] = None):
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/agent/retry")
-def retry_agent():
-    """Restarts the last active agent with its previous target."""
-    info = pm.get_info()
-    if not info["active_agent"] or info["active_agent"] == "None":
-        # Check logs for last agent
-        return {"error": "No previous agent found to retry."}
-    
-    return pm.run_agent(info["active_agent"])
-
-@app.post("/scout/promote")
-def promote_issue(background_tasks: BackgroundTasks, issue: Dict = Body(...)):
-    """Promotes a scouted issue with a fix strategy to the Coder agent."""
-    repo = issue.get("repo")
-    title = issue.get("title")
-    strategy = issue.get("strategy", "No strategy provided.")
-    
-    if not repo:
-        raise HTTPException(status_code=400, detail="Missing repo in issue data")
-    
-    repro_cmd = issue.get("repro_cmd")
-    fix_cmd = issue.get("fix_cmd")
-    
-    if not repro_cmd or not fix_cmd or "# Missing" in repro_cmd or "# Missing" in fix_cmd:
-        raise HTTPException(
-            status_code=400, 
-            detail="Mission malformed: Scout failed to provide actionable repro_cmd or fix_cmd."
-        )
-    
-    try:
-        # Store promotion in a directive file for the Coder to pick up
-        directive = {
-            "mission_id": f"MISSION-{int(time.time())}",
-            "target_repo": issue.get("target_repo") or repo,
-            "title": title,
-            "body": issue.get("body", "No body context provided."),
-            "strategy": strategy,
-            "repro_cmd": issue.get("repro_cmd"),
-            "fix_cmd": issue.get("fix_cmd"),
-            "bounty_multiplier": issue.get("multiplier", 1.0),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        mission_params_path = "logs/mission_parameters.json"
-        save_json(mission_params_path, directive)
-        save_json("logs/current_mission.json", issue)
-        
-        # Log promotion
-        with open(os.path.join("logs", "workflow.log"), "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] [API] Issue promoted to Coder: {title[:50]}...\n")
-
-        # Trigger Coder in background to ensure zero UI lag
-        background_tasks.add_task(pm.run_agent, "coder", target=repo)
-        
-        return {"status": "success", "msg": "Mission promoted. Coder initializing."}
-        
-    except Exception as e:
-        error_log = os.path.join("logs", "workflow.log")
-        with open(error_log, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] [CRITICAL] Promotion failed: {str(e)}\n")
-            traceback.print_exc(file=f)
-        raise HTTPException(status_code=500, detail=f"Promotion failed: {str(e)}")
-
-@app.get("/scout/report")
-def get_scout_report():
-    """Returns the latest scout report (intelligence results)."""
-    report_path = os.path.join("logs", "scout_report.json")
-    if not os.path.exists(report_path):
-        return {"error": "No scout report found."}
-    
-    try:
-        with open(report_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/scout/refine")
-def refine_scout_report(background_tasks: BackgroundTasks):
-    """Triggers refinement of failed strategies in the current report."""
-    background_tasks.add_task(run_refine_sync)
-    return {"status": "started", "agent": "scout", "task": "refining"}
-
-@app.get("/coder/diff")
-def get_coder_diff():
-    """Returns the current diff generated by the Coder."""
-    diff_path = os.path.join("logs", "coder_diff.md")
-    if not os.path.exists(diff_path):
-        return {"diff": "No active diff found."}
-    
-    try:
-        with open(diff_path, "r", encoding="utf-8") as f:
-            return {"diff": f.read()}
-    except Exception as e:
-        return {"error": str(e)}
+@app.post("/scout/deprecated")
+def legacy_scout_deprecated():
+    return {"status": "DEPRECATED", "msg": "Use /mission/start for V4 execution payloads."}
 
 @app.post("/logs/clear")
 def clear_logs():
