@@ -7,6 +7,7 @@ import requests
 import yaml
 import time
 import json
+import re
 from typing import List, Dict, Any
 
 # Ensure root is in sys.path so we can import core modules
@@ -121,11 +122,14 @@ class SurgicalScoutV3:
         # Premium Repo Multiplier (1.66x Hard-Lock v2.6)
         # Load premium list from instructions if available
         premium_repos = []
-        if hasattr(self, "instructions"):
-             # Simple regex to find names under '## PREMIUM REPOS'
-             match = re.search(r"## PREMIUM REPOS(.*?)(?=\n##|$)", self.instructions, re.DOTALL)
-             if match:
-                 premium_repos = [r.strip("- ").strip() for r in match.group(1).splitlines() if r.strip()]
+        if hasattr(self, "instructions") and self.instructions:
+             try:
+                 # Simple regex to find names under '## PREMIUM REPOS'
+                 match = re.search(r"## PREMIUM REPOS(.*?)(?=\n##|$)", self.instructions, re.DOTALL)
+                 if match:
+                     premium_repos = [r.strip("- ").strip() for r in match.group(1).splitlines() if r.strip()]
+             except Exception as e:
+                 print(f"Error parsing PREMIUM REPOS from instructions: {e}")
 
         repo_base = issue["repo"].split("/")[-1].lower() if "/" in issue["repo"] else issue["repo"].lower()
         # Force 1.66 for gittensor specifically (V2.6 Mandate)
