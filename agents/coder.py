@@ -163,13 +163,18 @@ def execute_mission():
         
         # Direct Path Mandate & UV Environment Fix
         if entry_point and ("python" in cmd.lower() or "-m" in cmd):
-            args = "help" if "help" in cmd else ""
-            uv_cmd = f"uv run --active python3 {entry_point} {args}".strip()
-            
+            # Isolate the python command avoiding bash wrappers
+            py_cmd = cmd
             if 'bash -c "' in cmd:
-                cmd = re.sub(r'python3[^"]*', uv_cmd, cmd)
-            else:
-                cmd = f'bash -c "export COLUMNS=40; export LINES=24; {uv_cmd}"'
+                extract = re.search(r'python3?[^"]*', cmd)
+                py_cmd = extract.group(0) if extract else cmd
+                
+            # Extract subcommands (sync, help, etc)
+            match = re.search(r'python3?(?:\s+-m)?\s+[^\s]+\s*(.*)', py_cmd)
+            args = match.group(1).strip() if match else ""
+            
+            uv_cmd = f"uv run --active python3 {entry_point} {args}".strip()
+            cmd = f'bash -c "export COLUMNS=40; export LINES=24; {uv_cmd}"'
                 
         return cmd.replace("  ", " ").strip()
 
