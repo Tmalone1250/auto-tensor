@@ -69,7 +69,8 @@ def tool_rank_issues(issues_list: list, target_repo: str) -> list:
         for label, boost in structural_labels.items():
             if label in labels: score += boost
             
-        repo_base = target_repo.split("/")[-1].lower() if "/" in target_repo else target_repo.lower()
+        repo_clean = target_repo.replace("https://github.com/", "").replace("http://github.com/", "").replace(".git", "").strip("/")
+        repo_base = repo_clean.split("/")[-1].lower() if "/" in repo_clean else repo_clean.lower()
         is_premium = (repo_base == "gittensor")
         if author_assoc in ["OWNER", "MEMBER", "COLLABORATOR"] or is_premium:
             score = int(score * 1.66)
@@ -91,7 +92,8 @@ def tool_fetch_issues(repo: str) -> list:
     if github_pat:
         headers["Authorization"] = f"token {github_pat}"
     
-    url = f"https://api.github.com/repos/{repo}/issues"
+    repo_clean = repo.replace("https://github.com/", "").replace("http://github.com/", "").replace(".git", "").strip("/")
+    url = f"https://api.github.com/repos/{repo_clean}/issues"
     params = {"state": "open", "sort": "created", "direction": "desc", "per_page": 30}
     response = requests.get(url, headers=headers, params=params)
     if response.status_code == 200:
