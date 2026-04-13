@@ -65,3 +65,8 @@ workspace/
 # Agent Files
 INSTRUCTIONS.md
 SKILLS.md
+
+# Agent Long-Term Memory
+agents/skills/
+logs/*.json
+logs/*.log
