@@ -137,9 +137,10 @@ class SurgicalScoutV3:
              except Exception as e:
                  print(f"Error parsing PREMIUM REPOS from instructions: {e}")
 
-        repo_base = target_repo.split("/")[-1].lower() if "/" in target_repo else target_repo.lower()
+        safe_repo = issue.get("repo", target_repo)
+        repo_base = safe_repo.split("/")[-1].lower() if "/" in safe_repo else safe_repo.lower()
         # Force 1.66 for gittensor specifically (V2.6 Mandate)
-        is_premium = (repo_base == "gittensor") or any(p in target_repo.lower() or p in repo_base for p in premium_repos)
+        is_premium = (repo_base == "gittensor") or any(p in safe_repo.lower() or p in repo_base for p in premium_repos)
 
         # Bounty Hunter v2.4+: Maintainer or Premium Multiplier
         maintainer_roles = ["OWNER", "MEMBER", "COLLABORATOR"]
@@ -147,7 +148,7 @@ class SurgicalScoutV3:
             score = int(score * 1.66)
             issue["multiplier"] = 1.66
             if is_premium:
-                print(f"  [PREMIUM LOCK]: {target_repo} matched premium list. 1.66x enforced.")
+                print(f"  [PREMIUM LOCK]: {safe_repo} matched premium list. 1.66x enforced.")
         else:
             issue["multiplier"] = 1.0
             

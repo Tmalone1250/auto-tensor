@@ -15,6 +15,7 @@ When calculating scores, always use the 'target_repo' context provided at start-
 Reinforce the 1.66x Multiplier rule. If the repo is a Gittensor target, the mission is high-priority.
 
 ## STRICT EXECUTION POLICY (v2.6)
+- MANDATE VERIFICATION: You MUST use the verified path from the Grounding Audit (v2.5) for all repro_cmd generation. Placeholders like ls -R are strictly prohibited.
 - NO PLACEHOLDERS: You are strictly forbidden from using 'ls -R' or generic placeholders as a repro_cmd.
 - DISK REALITY: You MUST construct a valid execution string using the verified ENTRY path discovered during grounding. 
 - PATH PRIORITY: Always prioritize entry points in the following order: main.py > cli.py > __main__.py > index.ts.

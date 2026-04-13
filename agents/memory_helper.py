@@ -41,12 +41,12 @@ class ReflectionEngine:
         ]
         new_block_str = "\n".join(new_block) + "\n"
 
-        # Surgical Replacement: Find existing block and replace (Upsert v2.6)
-        pattern = rf"## \[{re.escape(repo)}\]([\s\S]*?)(?=\n## |$)"
-        if re.search(pattern, content):
-            updated_content = re.sub(pattern, new_block_str.strip(), content)
+        # Surgical Replacement: Find existing block and replace (Upsert v2.8)
+        pattern = re.compile(rf"^## \[{re.escape(repo)}\].*?(?=^## \[|\Z)", re.MULTILINE | re.DOTALL)
+        if pattern.search(content):
+            updated_content = pattern.sub(new_block_str.strip() + "\n", content)
         else:
-            updated_content = content.strip() + "\n\n" + new_block_str
+            updated_content = content.strip() + "\n\n" + new_block_str.strip() + "\n"
 
         with open(path, "w", encoding="utf-8") as f:
             f.write(updated_content)
