@@ -95,7 +95,7 @@ class SurgicalScoutV3:
             sys.stdout.flush()
             return []
 
-    def calculate_delta_score(self, issue: Dict[Any, Any]) -> int:
+    def calculate_delta_score(self, issue: Dict[Any, Any], target_repo: str) -> int:
         score = 5 # Base score
         body = (issue.get("body") or "").lower()
         title = (issue.get("title") or "").lower()
@@ -106,7 +106,13 @@ class SurgicalScoutV3:
             score += 3
         
         # Priority labels (Structural Focus v2.4 - Gittensor Quality Gate)
-        labels = [l["name"].lower() for l in issue.get("labels", [])]
+        try:
+            labels_list = issue.get("labels")
+            if not isinstance(labels_list, list):
+                labels_list = []
+            labels = [l.get("name", "").lower() for l in labels_list if isinstance(l, dict)]
+        except Exception:
+            labels = []
         # Performance/Logic/Bug carry the highest reward potential for AST Density
         structural_labels = {
             "performance": 3,
@@ -131,9 +137,9 @@ class SurgicalScoutV3:
              except Exception as e:
                  print(f"Error parsing PREMIUM REPOS from instructions: {e}")
 
-        repo_base = issue["repo"].split("/")[-1].lower() if "/" in issue["repo"] else issue["repo"].lower()
+        repo_base = target_repo.split("/")[-1].lower() if "/" in target_repo else target_repo.lower()
         # Force 1.66 for gittensor specifically (V2.6 Mandate)
-        is_premium = (repo_base == "gittensor") or any(p in issue["repo"].lower() or p in repo_base for p in premium_repos)
+        is_premium = (repo_base == "gittensor") or any(p in target_repo.lower() or p in repo_base for p in premium_repos)
 
         # Bounty Hunter v2.4+: Maintainer or Premium Multiplier
         maintainer_roles = ["OWNER", "MEMBER", "COLLABORATOR"]
@@ -141,7 +147,7 @@ class SurgicalScoutV3:
             score = int(score * 1.66)
             issue["multiplier"] = 1.66
             if is_premium:
-                print(f"  [PREMIUM LOCK]: {issue['repo']} matched premium list. 1.66x enforced.")
+                print(f"  [PREMIUM LOCK]: {target_repo} matched premium list. 1.66x enforced.")
         else:
             issue["multiplier"] = 1.0
             
@@ -152,7 +158,13 @@ class SurgicalScoutV3:
         return min(10, max(1, score))
 
     def categorize(self, issue: Dict[Any, Any]) -> str:
-        labels = [l["name"].lower() for l in issue.get("labels", [])]
+        try:
+            labels_list = issue.get("labels")
+            if not isinstance(labels_list, list):
+                labels_list = []
+            labels = [l.get("name", "").lower() for l in labels_list if isinstance(l, dict)]
+        except Exception:
+            labels = []
         if "performance" in labels or "p1" in labels:
             return "Performance"
         if "a11y" in labels or "ui" in labels or "interface" in labels:
@@ -313,20 +325,23 @@ class SurgicalScoutV3:
                 if "pull_request" in issue: continue
                 if issue.get("comments", 0) > self.scout_settings.get("max_comments", 15): continue
                 
-                delta_score = self.calculate_delta_score(issue)
-                category = self.categorize(issue)
-                
-                all_results.append({
-                    "id": issue["id"],
-                    "title": issue["title"],
-                    "body": issue.get("body", ""),
-                    "url": issue["html_url"],
-                    "repo": repo,
-                    "target_repo": f"https://github.com/{repo}",
-                    "delta_score": delta_score,
-                    "multiplier": issue.get("multiplier", 1.0),
-                    "category": category
-                })
+                try:
+                    delta_score = self.calculate_delta_score(issue, target_repo=repo)
+                    category = self.categorize(issue)
+                    
+                    all_results.append({
+                        "id": issue.get("id"),
+                        "title": issue.get("title", ""),
+                        "body": issue.get("body", ""),
+                        "url": issue.get("html_url", ""),
+                        "repo": repo,
+                        "target_repo": f"https://github.com/{repo}",
+                        "delta_score": delta_score,
+                        "multiplier": issue.get("multiplier", 1.0),
+                        "category": category
+                    })
+                except Exception as e:
+                    print(f"Error processing issue {issue.get('id')}: {e}")
         
         # Rank by Delta Score
         all_results.sort(key=lambda x: x["delta_score"], reverse=True)

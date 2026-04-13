@@ -7,3 +7,6 @@ Verified entry points and entry-trees for provisioned workspaces.
 - **ENTRY**: path/to/main.py
 - **MULTIPLIER**: 1.66x
 - **LAST_VERIFIED**: ISO-TIMESTAMP
+
+> **TEMPLATE GUARD:**
+> If a KeyError or NameError occurs, do not write to this file; instead, log the specific missing key to scout.log for operator review.
