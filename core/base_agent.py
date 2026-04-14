@@ -58,7 +58,7 @@ class BaseAgent:
         print(f"[{self.agent_name.capitalize()}] Routing context due to state: {state}")
         prompt = (f"STATE: {state}\n"
                   f"TASK CONTEXT:\n{task_context}\n\n"
-                  "Analyze and provide your next action as a JSON object with 'action' (FINISH or TOOL), 'tool' (name of tool if action is TOOL), and 'args' (a dict of kwargs). Do not include any other text.")
+                  "Analyze and provide your next action as a JSON object with 'Reasoning' (string detailing logic), 'action' (FINISH or TOOL), 'tool' (name of tool if action is TOOL), and 'args' (a dict of kwargs). Do not include any other text.")
         return self.llm.generate(prompt, system_override=self.system_prompt)
 
     def execute_mission(self, initial_context: str):
@@ -73,6 +73,13 @@ class BaseAgent:
             if "error" in parsed:
                  context_log += f"\n\nJSON Parsing Failure. Expected pure JSON Object: {parsed['error']}"
                  continue
+                 
+            if "Reasoning" not in parsed and "reasoning" not in parsed:
+                 context_log += f"\n\nJSON Integrity Failure. Missing explicitly required 'Reasoning' dict key. Fix state block."
+                 continue
+                 
+            reasoning = parsed.get("Reasoning", parsed.get("reasoning", ""))
+            print(f"[{self.agent_name.capitalize()} Reasoning]: {reasoning}")
                  
             action = parsed.get("action", "")
             

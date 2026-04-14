@@ -97,18 +97,15 @@ def save_json(path: str, data: dict):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-# --- V4 Structured Execution Pipeline Orchestrator ---
-class RepairRequest(BaseModel):
-    repo_url: str
-    issue_description: str
-
-def run_pipeline_bg(repo_url: str, issue_description: str, task_id: str):
-    from core.pipeline import RepairPipeline
+# --- V4 Maggie Sniper Orchestrator ---
+def run_maggie_sync(url: str):
+    from agents.maggie import MaggieAgent
     try:
-        pipe = RepairPipeline(repo_url, issue_description, task_id)
-        pipe.run()
+        agent = MaggieAgent()
+        agent.scan(target_repo=url)
     except Exception as e:
-        pass
+        import traceback
+        traceback.print_exc()
 
 class ProcessManagerStub:
     self_start_time = time.time()
@@ -178,25 +175,16 @@ def get_status():
         "needs_verification": needs_verification
     }
 
-@app.post("/task/repair")
-def trigger_repair_task(req: RepairRequest, background_tasks: BackgroundTasks):
-    from core.pipeline import RepairPipeline
-    task_id = str(uuid.uuid4())
-    background_tasks.add_task(run_pipeline_bg, req.repo_url, req.issue_description, task_id)
-    return {"status": "started", "task_id": task_id}
-
-@app.get("/task/{task_id}/status")
-def get_task_status(task_id: str):
-    path = "logs/tasks.json"
+@app.get("/scout/report")
+def get_scout_report():
+    path = "logs/scout_report.json"
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                db = json.load(f)
-                if task_id in db:
-                    return db[task_id]
+                return json.load(f)
         except:
             return {"status": "LOADING"}
-    return {"status": "NO_TASK_FOUND"}
+    return {"status": "NO_REPORT_FOUND"}
 
 # --- Provisioning Logic ---
 def get_provision_folder(url: str) -> str:
@@ -382,56 +370,13 @@ def add_repo(request: RepoRequest):
 
 @app.post("/repo/scan")
 def scan_repository(request: RepoRequest, background_tasks: BackgroundTasks):
-    """Triggers the Scout agent on a specific repository URL."""
+    """Triggers the Maggie Intel sniper on a specific repository URL."""
     url = request.url.strip()
     if not url.startswith("https://github.com/"):
         raise HTTPException(status_code=400, detail="Invalid GitHub URL")
         
-    background_tasks.add_task(run_scout_sync, url)
-    return {"status": "started", "agent": "scout", "target": url}
-
-@app.post("/repo/verify")
-def verify_repository(request: VerifyRequest):
-    """Triggers the Discovery Audit (Grounding) for a provisioned repository."""
-    repo_folder = request.repo_path.strip().lower()
-    
-    try:
-        from core.tools.scout_ops import tool_identify_cli
-        scout = ScoutAgent()
-        
-        # V3 Shim for Discovery Audit Grounding
-        workspace_path = os.path.join("workspace", repo_folder)
-        cli_data_str = tool_identify_cli(repo_path=workspace_path)
-        cli_data = []
-        try:
-             cli_data = json.loads(cli_data_str)
-        except:
-             pass
-             
-        verified_entry = cli_data[0]['file'] if cli_data else "cli.py"
-        verified_entry = verified_entry.replace("./", "")
-        
-        result = {"status": "VERIFIED" if cli_data else "UNCERTAIN", "entry_point": verified_entry}
-        
-        if result.get("status") == "VERIFIED":
-            global SYSTEM_STATE
-            if repo_folder not in SYSTEM_STATE["verified_repos"]:
-                SYSTEM_STATE["verified_repos"].append(repo_folder)
-            
-            # LTM: Lock in verified paths
-            memory = ReflectionEngine()
-            memory.update_skill(repo_folder, {
-                "entry_point": result.get("entry_point"),
-                "multiplier": 1.66,
-                "strategy": "Disk-verified entry point Grounding 2.5 Audit"
-            }, agent="scout")
-            
-            return {"status": "success", "msg": "Grounding verified and locked to Memory.", "data": result}
-        else:
-            return {"status": "uncertain", "msg": "Grounding uncertain. Entry point MIA.", "data": result}
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    background_tasks.add_task(run_maggie_sync, url)
+    return {"status": "started", "agent": "maggie", "target": url}
 
 # --- Approvals Workflow ---
 @app.get("/approvals")

@@ -136,3 +136,20 @@ v4_tool_registry = {
     "tool_grep_entry": tool_grep_entry,
     "verify_fix": verify_fix
 }
+
+from core.tools.github_ops import tool_github_fork as _for_fork, tool_github_clone as _for_clone, tool_github_create_branch as _for_branch
+from core.tools.scout_ops import tool_grep_context as _for_grep, tool_find_file as _for_find
+
+tool_github_fork = v4_tool(_for_fork)
+tool_github_clone = v4_tool(_for_clone)
+tool_github_create_branch = v4_tool(_for_branch)
+tool_grep_context = v4_tool(_for_grep)
+tool_find_file = v4_tool(_for_find)
+
+v4_tool_registry.update({
+    "tool_github_fork": tool_github_fork,
+    "tool_github_clone": tool_github_clone,
+    "tool_github_create_branch": tool_github_create_branch,
+    "tool_grep_context": tool_grep_context,
+    "tool_find_file": tool_find_file
+})

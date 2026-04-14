@@ -99,3 +99,29 @@ def tool_fetch_issues(repo: str) -> list:
     if response.status_code == 200:
         return [i for i in response.json() if not i.get("assignee") and "pull_request" not in i]
     return []
+
+def tool_grep_context(pattern: str, file_path: str) -> str:
+    """Returns target line with bounded +/- 10 lines zeroed padding."""
+    if not os.path.exists(file_path):
+        return f"Error: Identity File {file_path} not natively found"
+        
+    cmd = ["grep", "-rnE", "-C", "10", pattern, file_path]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return "Pattern search not found or fault occurred."
+        return result.stdout[:8000]
+    except Exception as e:
+        return f"Error executing grep explicit context: {e}"
+
+def tool_find_file(filename: str, repo_path: str = ".") -> str:
+    """Locates explicit file definitions inside a structural map."""
+    if not os.path.exists(repo_path):
+        return f"Error: Repository target path {repo_path} dynamically missing."
+        
+    cmd = ["find", repo_path, "-name", filename]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result.stdout
+    except Exception as e:
+        return f"Error executing locate loop: {e}"
