@@ -26,8 +26,13 @@ from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, WebSocket, We
 from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from core.terminal import PtyManager
-from core.terminal_manager import terminal_manager
+try:
+    from core.terminal import PtyManager
+    from core.terminal_manager import terminal_manager
+except ImportError as e:
+    print(f"[SYSTEM]: Terminal Native PTY constrained. {e}")
+    PtyManager = None
+    terminal_manager = None
 
 GITHUB_KEY = os.getenv("GITHUB_KEY")
 print(f"DEBUG: GitHub Token Loaded. Starts with: {GITHUB_KEY[:4] if GITHUB_KEY else 'NONE'}")
@@ -533,6 +538,12 @@ async def terminal_ws(
     if not TERMINAL_SECRET or token != TERMINAL_SECRET:
         await websocket.close(code=4401)
         return
+        
+    if terminal_manager is None:
+        await websocket.accept()
+        await websocket.send_text("PTY Terminal not supported on this operating system architecture.")
+        await websocket.close(code=1011)
+        return
 
     await websocket.accept()
 
@@ -581,6 +592,9 @@ async def clear_terminal_buffer(session_id: str, token: str = Query(default=""))
     """Flushes the backend output buffer for a specific session."""
     if not TERMINAL_SECRET or token != TERMINAL_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    if terminal_manager is None:
+        raise HTTPException(status_code=501, detail="Terminal manager not initialized")
     
     session = terminal_manager.get(session_id)
     if not session:
