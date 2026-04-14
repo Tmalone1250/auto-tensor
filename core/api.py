@@ -56,7 +56,6 @@ APPROVALS_PATH = "logs/approvals.json"
 
 from core.health_check import check_rate_limit
 from core.skill_writer import record_mission_success
-from agents.scout import ScoutAgent
 from agents.memory_helper import ReflectionEngine
 
 app = FastAPI(title="Auto-Tensor Command Bridge")
